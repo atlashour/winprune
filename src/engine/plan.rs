@@ -135,6 +135,7 @@ fn show_value(value: &RegValue) -> String {
     match value {
         RegValue::Dword(n) => n.to_string(),
         RegValue::String(s) => format!("\"{s}\""),
+        RegValue::Other(kind) => format!("a {kind} value"),
     }
 }
 
@@ -480,7 +481,12 @@ fn plan_registry(
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
 ) {
-    let current = sys.registry_value(hive, path, name).ok().flatten();
+    // A read that fails (access denied, odd key) must not look like "absent": the
+    // apply step gets to try and report for itself.
+    let (current, unreadable) = match sys.registry_value(hive, path, name) {
+        Ok(v) => (v, None),
+        Err(e) => (None, Some(format!("could not read: {e}"))),
+    };
     if delete {
         ops.push(Op {
             kind: OpKind::RegistryDelete {
@@ -488,12 +494,12 @@ fn plan_registry(
                 path: path.to_string(),
                 name: name.to_string(),
             },
-            state: if current.is_some() {
+            state: if current.is_some() || unreadable.is_some() {
                 OpState::WillApply
             } else {
                 OpState::Absent
             },
-            detail: String::new(),
+            detail: unreadable.clone().unwrap_or_default(),
         });
         return;
     }
@@ -519,9 +525,10 @@ fn plan_registry(
             value: wanted,
         },
         state,
-        detail: match current {
-            Some(v) => format!("currently {}", show_value(&v)),
-            None => String::new(),
+        detail: match (current, unreadable) {
+            (Some(v), _) => format!("currently {}", show_value(&v)),
+            (None, Some(why)) => why,
+            (None, None) => String::new(),
         },
     });
 }

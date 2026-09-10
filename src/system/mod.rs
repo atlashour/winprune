@@ -50,6 +50,8 @@ pub enum Provisioned {
 pub enum RegValue {
     Dword(u32),
     String(String),
+    /// Present, but of a type winprune never writes (binary, qword, multi-string).
+    Other(String),
 }
 
 #[derive(Debug, Error)]
