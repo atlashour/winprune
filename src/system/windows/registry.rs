@@ -81,7 +81,7 @@ pub fn delete(hive: Hive, path: &str, name: &str) -> Outcome {
 mod tests {
     use super::*;
 
-    fn raw(vtype: RegType, bytes: &[u8]) -> RawValue {
+    fn raw(vtype: RegType, bytes: &[u8]) -> RawValue<'_> {
         RawValue {
             bytes: bytes.to_vec().into(),
             vtype,
