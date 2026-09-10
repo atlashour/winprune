@@ -40,19 +40,11 @@ fn decode(raw: &RawValue) -> Option<RegValue> {
             raw.bytes[3],
         ]))),
         RegType::REG_SZ | RegType::REG_EXPAND_SZ => {
-            let text: String = String::from_utf8_lossy(&raw.bytes).to_string();
-            let wide: Vec<u16> = raw
-                .bytes
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let decoded = String::from_utf16_lossy(&wide);
-            let decoded = decoded.trim_end_matches('\0').to_string();
-            Some(RegValue::String(if decoded.is_empty() {
-                text
-            } else {
-                decoded
-            }))
+            // Registry strings are UTF-16LE with a trailing NUL.
+            let (pairs, _) = raw.bytes.as_chunks::<2>();
+            let wide: Vec<u16> = pairs.iter().map(|c| u16::from_le_bytes(*c)).collect();
+            let text = String::from_utf16_lossy(&wide);
+            Some(RegValue::String(text.trim_end_matches('\0').to_string()))
         }
         _ => None,
     }
