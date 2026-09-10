@@ -386,28 +386,19 @@ fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
                 detail: String::new(),
             });
         }
-        match &snap.provisioned {
-            Provisioned::Known(families) => {
-                for family in families.iter().filter(|f| glob(pattern, f)) {
-                    matched = true;
-                    ops.push(Op {
-                        kind: OpKind::Deprovision {
-                            family: family.clone(),
-                        },
-                        state: OpState::WillApply,
-                        detail: String::new(),
-                    });
-                }
+        if let Provisioned::Known(families) = &snap.provisioned {
+            for family in families.iter().filter(|f| glob(pattern, f)) {
+                matched = true;
+                ops.push(Op {
+                    kind: OpKind::Deprovision {
+                        family: family.clone(),
+                    },
+                    state: OpState::WillApply,
+                    detail: String::new(),
+                });
             }
-            Provisioned::NeedsElevation => ops.push(Op {
-                kind: OpKind::PackagePattern {
-                    pattern: pattern.clone(),
-                },
-                state: OpState::NeedsElevation,
-                detail: "provisioned packages are only visible when elevated".into(),
-            }),
         }
-        if !matched && !matches!(snap.provisioned, Provisioned::NeedsElevation) {
+        if !matched {
             ops.push(Op {
                 kind: OpKind::PackagePattern {
                     pattern: pattern.clone(),
@@ -416,6 +407,17 @@ fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
                 detail: String::new(),
             });
         }
+    }
+    // One line per step, not per pattern: the user only needs to know that the
+    // provisioned list was out of reach.
+    if matches!(snap.provisioned, Provisioned::NeedsElevation) {
+        ops.push(Op {
+            kind: OpKind::PackagePattern {
+                pattern: "provisioned packages".into(),
+            },
+            state: OpState::NeedsElevation,
+            detail: "not checked without elevation".into(),
+        });
     }
 }
 

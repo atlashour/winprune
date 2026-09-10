@@ -1,21 +1,13 @@
 mod catalog;
+mod cli;
 mod engine;
 mod os;
 mod system;
+mod tui;
+
+use clap::Parser;
 
 fn main() {
-    let info = os::detect();
-    match catalog::Catalog::embedded() {
-        Ok(c) => println!(
-            "winprune {} ({} catalog items, build {}, elevated {})",
-            env!("CARGO_PKG_VERSION"),
-            c.items.len(),
-            info.build,
-            info.elevated
-        ),
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    }
+    let code = cli::run(cli::Cli::parse());
+    std::process::exit(code);
 }

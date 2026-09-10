@@ -27,7 +27,7 @@ impl Level {
 
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+        f.pad(match self {
             Level::Medium => "medium",
             Level::High => "high",
             Level::Max => "max",
@@ -60,7 +60,7 @@ pub enum Risk {
 
 impl fmt::Display for Risk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+        f.pad(match self {
             Risk::Low => "low",
             Risk::Medium => "medium",
             Risk::High => "high",
@@ -112,7 +112,7 @@ impl Category {
 
 impl fmt::Display for Category {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.title())
+        f.pad(self.title())
     }
 }
 
@@ -126,7 +126,7 @@ pub enum Startup {
 
 impl fmt::Display for Startup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+        f.pad(match self {
             Startup::Disabled => "disabled",
             Startup::Manual => "manual",
             Startup::Automatic => "automatic",
@@ -144,7 +144,7 @@ pub enum Hive {
 
 impl fmt::Display for Hive {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+        f.pad(match self {
             Hive::Hklm => "HKLM",
             Hive::Hkcu => "HKCU",
             Hive::Hkcr => "HKCR",
