@@ -1,0 +1,31 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+      - run: cargo build --release
+      - name: package
+        shell: pwsh
+        run: |
+          $name = "winprune-${{ github.ref_name }}-x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item target\release\winprune.exe, README.md $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          Get-FileHash "$name.zip" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name.zip" } | Set-Content "$name.zip.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            winprune-*.zip
+            winprune-*.zip.sha256
