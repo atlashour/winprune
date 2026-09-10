@@ -1,9 +1,10 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use super::{
-    AppxPackage, Inspect, PathInfo, Provisioned, RegValue, ServiceInfo, SysError, TaskInfo,
+    AppxPackage, Inspect, PathInfo, Provisioned, RegRoot, RegValue, ServiceInfo, SysError,
+    TaskInfo, UserProfile,
 };
-use crate::catalog::{Hive, Startup};
+use crate::catalog::Startup;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -13,10 +14,12 @@ pub struct Fake {
     packages: Vec<AppxPackage>,
     provisioned: Option<Provisioned>,
     services: HashMap<String, ServiceInfo>,
-    registry: HashMap<(Hive, String, String), RegValue>,
+    registry: HashMap<(String, String, String), RegValue>,
     tasks: Vec<TaskInfo>,
     processes: Vec<String>,
     paths: HashMap<PathBuf, PathInfo>,
+    profiles: Vec<UserProfile>,
+    interactive: Option<String>,
 }
 
 impl Fake {
@@ -47,11 +50,14 @@ impl Fake {
         self
     }
 
-    pub fn with_registry(mut self, hive: Hive, path: &str, name: &str, value: RegValue) -> Self {
-        self.registry.insert(
-            (hive, path.to_ascii_lowercase(), name.to_ascii_lowercase()),
-            value,
-        );
+    pub fn with_registry(
+        mut self,
+        root: &RegRoot,
+        path: &str,
+        name: &str,
+        value: RegValue,
+    ) -> Self {
+        self.registry.insert(key(root, path, name), value);
         self
     }
 
@@ -73,6 +79,29 @@ impl Fake {
             .insert(PathBuf::from(path), PathInfo { files, bytes });
         self
     }
+
+    pub fn with_profile(mut self, sid: &str, name: &str, path: &str, loaded: bool) -> Self {
+        self.profiles.push(UserProfile {
+            sid: sid.to_string(),
+            name: name.to_string(),
+            path: PathBuf::from(path),
+            loaded,
+        });
+        self
+    }
+
+    pub fn interactive(mut self, sid: &str) -> Self {
+        self.interactive = Some(sid.to_string());
+        self
+    }
+}
+
+fn key(root: &RegRoot, path: &str, name: &str) -> (String, String, String) {
+    (
+        root.to_string(),
+        path.to_ascii_lowercase(),
+        name.to_ascii_lowercase(),
+    )
 }
 
 impl Inspect for Fake {
@@ -93,14 +122,11 @@ impl Inspect for Fake {
 
     fn registry_value(
         &self,
-        hive: Hive,
+        root: &RegRoot,
         path: &str,
         name: &str,
     ) -> Result<Option<RegValue>, SysError> {
-        Ok(self
-            .registry
-            .get(&(hive, path.to_ascii_lowercase(), name.to_ascii_lowercase()))
-            .cloned())
+        Ok(self.registry.get(&key(root, path, name)).cloned())
     }
 
     fn tasks(&self) -> Result<Vec<TaskInfo>, SysError> {
@@ -113,5 +139,18 @@ impl Inspect for Fake {
 
     fn path_info(&self, path: &Path) -> Result<Option<PathInfo>, SysError> {
         Ok(self.paths.get(path).copied())
+    }
+
+    fn user_profiles(&self) -> Result<Vec<UserProfile>, SysError> {
+        Ok(self.profiles.clone())
+    }
+
+    fn interactive_user(&self) -> Option<UserProfile> {
+        let sid = self.interactive.as_ref()?;
+        self.profiles.iter().find(|p| &p.sid == sid).cloned()
+    }
+
+    fn default_profile_path(&self) -> Option<PathBuf> {
+        Some(PathBuf::from("C:\\Users\\Default"))
     }
 }

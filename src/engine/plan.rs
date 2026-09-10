@@ -1,8 +1,8 @@
 use super::expand_env;
 use crate::catalog::{
-    Catalog, Category, Hive, Item, Level, RegType, Risk, Startup, Step, TaskAction,
+    Catalog, Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction,
 };
-use crate::system::{AppxPackage, Inspect, Provisioned, RegValue, TaskInfo};
+use crate::system::{AppxPackage, Inspect, Provisioned, RegRoot, RegValue, TaskInfo, UserProfile};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
@@ -26,16 +26,16 @@ impl Selection {
         }
     }
 
-    fn wants(&self, item: &Item) -> bool {
-        if self.skip.contains(&item.id) {
+    fn wants(&self, id: &str, level: Level) -> bool {
+        if self.skip.contains(id) {
             return false;
         }
-        if self.extra.contains(&item.id) {
+        if self.extra.contains(id) {
             return true;
         }
         match &self.only {
-            Some(only) => only.contains(&item.id),
-            None => self.level >= item.level,
+            Some(only) => only.contains(id),
+            None => self.level >= level,
         }
     }
 }
@@ -71,13 +71,13 @@ pub enum OpKind {
         startup: Startup,
     },
     RegistrySet {
-        hive: Hive,
+        root: RegRoot,
         path: String,
         name: String,
         value: RegValue,
     },
     RegistryDelete {
-        hive: Hive,
+        root: RegRoot,
         path: String,
         name: String,
     },
@@ -111,15 +111,15 @@ impl fmt::Display for OpKind {
             OpKind::StopService { name } => write!(f, "stop service {name}"),
             OpKind::ServiceStartup { name, startup } => write!(f, "service {name} -> {startup}"),
             OpKind::RegistrySet {
-                hive,
+                root,
                 path,
                 name,
                 value,
             } => {
-                write!(f, "{hive}\\{path}\\{name} = {}", show_value(value))
+                write!(f, "{root}\\{path}\\{name} = {}", show_value(value))
             }
-            OpKind::RegistryDelete { hive, path, name } => {
-                write!(f, "delete {hive}\\{path}\\{name}")
+            OpKind::RegistryDelete { root, path, name } => {
+                write!(f, "delete {root}\\{path}\\{name}")
             }
             OpKind::TaskDisable { path } => write!(f, "disable task {path}"),
             OpKind::TaskDelete { path } => write!(f, "delete task {path}"),
@@ -146,6 +146,21 @@ pub struct Op {
     pub state: OpState,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub detail: String,
+}
+
+impl Op {
+    fn new(kind: OpKind, state: OpState) -> Op {
+        Op {
+            kind,
+            state,
+            detail: String::new(),
+        }
+    }
+
+    fn with_detail(mut self, detail: impl Into<String>) -> Op {
+        self.detail = detail.into();
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -182,6 +197,8 @@ pub struct Plan {
     pub build: u32,
     pub elevated: bool,
     pub level: Level,
+    /// Account the per-user steps are written for, when it could be resolved.
+    pub user: Option<String>,
     pub items: Vec<PlannedItem>,
 }
 
@@ -215,22 +232,7 @@ fn resolve_selection(
 ) -> HashSet<String> {
     let mut wanted: HashSet<String> = items
         .iter()
-        .filter(|(id, _, level)| {
-            let probe = Item {
-                id: id.clone(),
-                name: String::new(),
-                category: Category::Appx,
-                level: *level,
-                risk: Risk::Low,
-                summary: String::new(),
-                warning: None,
-                requires: Vec::new(),
-                windows: Default::default(),
-                enabled: true,
-                step: Vec::new(),
-            };
-            selection.wants(&probe)
-        })
+        .filter(|(id, _, level)| selection.wants(id, *level))
         .map(|(id, _, _)| id.clone())
         .collect();
 
@@ -288,6 +290,7 @@ pub fn build_plan(
         build,
         elevated,
         level: selection.level,
+        user: snapshot.interactive.as_ref().map(|p| p.name.clone()),
         items,
     }
 }
@@ -298,6 +301,9 @@ struct Snapshot {
     provisioned: Provisioned,
     tasks: Vec<TaskInfo>,
     processes: Vec<String>,
+    profiles: Vec<UserProfile>,
+    interactive: Option<UserProfile>,
+    default_profile: Option<PathBuf>,
 }
 
 impl Snapshot {
@@ -309,6 +315,62 @@ impl Snapshot {
                 .unwrap_or(Provisioned::NeedsElevation),
             tasks: sys.tasks().unwrap_or_default(),
             processes: sys.running_processes().unwrap_or_default(),
+            profiles: sys.user_profiles().unwrap_or_default(),
+            interactive: sys.interactive_user(),
+            default_profile: sys.default_profile_path(),
+        }
+    }
+
+    /// Registry roots a per-user step must reach for the given scope.
+    fn user_roots(&self, scope: Scope) -> Vec<RegRoot> {
+        let interactive = match &self.interactive {
+            Some(p) => RegRoot::User {
+                sid: p.sid.clone(),
+                name: p.name.clone(),
+            },
+            None => RegRoot::CurrentUser,
+        };
+        match scope {
+            Scope::User => vec![interactive],
+            Scope::DefaultProfile => vec![RegRoot::DefaultProfile],
+            Scope::AllUsers => {
+                let mut roots = vec![interactive];
+                let own = self.interactive.as_ref().map(|p| p.sid.as_str());
+                for p in self
+                    .profiles
+                    .iter()
+                    .filter(|p| p.loaded && Some(p.sid.as_str()) != own)
+                {
+                    roots.push(RegRoot::User {
+                        sid: p.sid.clone(),
+                        name: p.name.clone(),
+                    });
+                }
+                roots.push(RegRoot::DefaultProfile);
+                roots
+            }
+        }
+    }
+
+    /// Profile folders a per-user delete step must reach. `None` as the folder means
+    /// "the current process environment", used when the interactive user is unknown.
+    fn user_folders(&self, scope: Scope) -> Vec<(String, Option<PathBuf>)> {
+        let interactive = match &self.interactive {
+            Some(p) => (p.name.clone(), Some(p.path.clone())),
+            None => ("current user".to_string(), None),
+        };
+        match scope {
+            Scope::User => vec![interactive],
+            Scope::DefaultProfile => vec![("Default".to_string(), self.default_profile.clone())],
+            Scope::AllUsers => {
+                let mut out = vec![interactive];
+                let own = self.interactive.as_ref().map(|p| p.sid.as_str());
+                for p in self.profiles.iter().filter(|p| Some(p.sid.as_str()) != own) {
+                    out.push((p.name.clone(), Some(p.path.clone())));
+                }
+                out.push(("Default".to_string(), self.default_profile.clone()));
+                out
+            }
         }
     }
 }
@@ -327,20 +389,41 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                 kind,
                 value,
                 delete,
-            } => plan_registry(
-                *hive,
-                path,
-                name,
-                *kind,
-                value.as_ref(),
-                *delete,
-                sys,
-                &mut ops,
-            ),
+                scope,
+            } => {
+                let roots = match hive {
+                    Hive::Hklm => vec![RegRoot::Machine],
+                    Hive::Hkcr => vec![RegRoot::Classes],
+                    Hive::Hkcu => snap.user_roots(*scope),
+                };
+                for root in roots {
+                    plan_registry(
+                        root,
+                        path,
+                        name,
+                        *kind,
+                        value.as_ref(),
+                        *delete,
+                        sys,
+                        &mut ops,
+                    );
+                }
+            }
             Step::Task { patterns, action } => plan_tasks(patterns, *action, snap, &mut ops),
             Step::Kill { processes } => plan_kill(processes, snap, &mut ops),
             Step::Run { candidates, args } => plan_run(candidates, args, sys, &mut ops),
-            Step::Delete { paths } => plan_delete(paths, sys, &mut ops, &mut live_notes),
+            Step::Delete { paths, scope } => {
+                for (who, folder) in snap.user_folders(*scope) {
+                    plan_delete(
+                        paths,
+                        folder.as_deref(),
+                        &who,
+                        sys,
+                        &mut ops,
+                        &mut live_notes,
+                    );
+                }
+            }
         }
     }
 
@@ -373,106 +456,92 @@ fn glob(pattern: &str, text: &str) -> bool {
     glob_match::glob_match(&pattern, &text)
 }
 
+/// Deprovisioning comes first: removing a registered package while it is still
+/// provisioned lets Windows register it again for the next user.
 fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     for pattern in patterns {
         let mut matched = false;
+        if let Provisioned::Known(families) = &snap.provisioned {
+            for family in families.iter().filter(|f| glob(pattern, f)) {
+                matched = true;
+                ops.push(Op::new(
+                    OpKind::Deprovision {
+                        family: family.clone(),
+                    },
+                    OpState::WillApply,
+                ));
+            }
+        }
         for pkg in snap.packages.iter().filter(|p| glob(pattern, &p.name)) {
             matched = true;
-            ops.push(Op {
-                kind: OpKind::RemovePackage {
+            ops.push(Op::new(
+                OpKind::RemovePackage {
                     full_name: pkg.full_name.clone(),
                     name: pkg.name.clone(),
                 },
-                state: if pkg.non_removable {
+                if pkg.non_removable {
                     OpState::NonRemovable
                 } else {
                     OpState::WillApply
                 },
-                detail: String::new(),
-            });
-        }
-        if let Provisioned::Known(families) = &snap.provisioned {
-            for family in families.iter().filter(|f| glob(pattern, f)) {
-                matched = true;
-                ops.push(Op {
-                    kind: OpKind::Deprovision {
-                        family: family.clone(),
-                    },
-                    state: OpState::WillApply,
-                    detail: String::new(),
-                });
-            }
+            ));
         }
         if !matched {
-            ops.push(Op {
-                kind: OpKind::PackagePattern {
+            ops.push(Op::new(
+                OpKind::PackagePattern {
                     pattern: pattern.clone(),
                 },
-                state: OpState::Absent,
-                detail: String::new(),
-            });
+                OpState::Absent,
+            ));
         }
     }
     // One line per step, not per pattern: the user only needs to know that the
     // provisioned list was out of reach.
     if matches!(snap.provisioned, Provisioned::NeedsElevation) {
-        ops.push(Op {
-            kind: OpKind::PackagePattern {
-                pattern: "provisioned packages".into(),
-            },
-            state: OpState::NeedsElevation,
-            detail: "not checked without elevation".into(),
-        });
+        ops.push(
+            Op::new(
+                OpKind::PackagePattern {
+                    pattern: "provisioned packages".into(),
+                },
+                OpState::NeedsElevation,
+            )
+            .with_detail("not checked without elevation"),
+        );
     }
 }
 
 fn plan_services(names: &[String], startup: Startup, sys: &dyn Inspect, ops: &mut Vec<Op>) {
     for name in names {
+        let kind = OpKind::ServiceStartup {
+            name: name.clone(),
+            startup,
+        };
         match sys.service(name) {
             Ok(Some(info)) => {
                 if startup == Startup::Disabled && info.running {
-                    ops.push(Op {
-                        kind: OpKind::StopService { name: name.clone() },
-                        state: OpState::WillApply,
-                        detail: String::new(),
-                    });
+                    ops.push(Op::new(
+                        OpKind::StopService { name: name.clone() },
+                        OpState::WillApply,
+                    ));
                 }
-                ops.push(Op {
-                    kind: OpKind::ServiceStartup {
-                        name: name.clone(),
-                        startup,
-                    },
-                    state: if info.startup == startup {
-                        OpState::AlreadyDone
-                    } else {
-                        OpState::WillApply
-                    },
-                    detail: format!("currently {}", info.startup),
-                });
+                let state = if info.startup == startup {
+                    OpState::AlreadyDone
+                } else {
+                    OpState::WillApply
+                };
+                ops.push(Op::new(kind, state).with_detail(format!("currently {}", info.startup)));
             }
-            Ok(None) => ops.push(Op {
-                kind: OpKind::ServiceStartup {
-                    name: name.clone(),
-                    startup,
-                },
-                state: OpState::Absent,
-                detail: String::new(),
-            }),
-            Err(e) => ops.push(Op {
-                kind: OpKind::ServiceStartup {
-                    name: name.clone(),
-                    startup,
-                },
-                state: OpState::WillApply,
-                detail: format!("could not inspect: {e}"),
-            }),
+            Ok(None) => ops.push(Op::new(kind, OpState::Absent)),
+            Err(e) => ops.push(
+                Op::new(kind, OpState::WillApply).with_detail(format!("could not inspect: {e}")),
+            ),
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn plan_registry(
-    hive: Hive,
+    root: RegRoot,
     path: &str,
     name: &str,
     kind: Option<RegType>,
@@ -481,26 +550,29 @@ fn plan_registry(
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
 ) {
-    // A read that fails (access denied, odd key) must not look like "absent": the
-    // apply step gets to try and report for itself.
-    let (current, unreadable) = match sys.registry_value(hive, path, name) {
+    // A read that fails (access denied, hive not mounted) must not look like "absent":
+    // the apply step gets to try and report for itself.
+    let (current, unreadable) = match sys.registry_value(&root, path, name) {
         Ok(v) => (v, None),
         Err(e) => (None, Some(format!("could not read: {e}"))),
     };
     if delete {
-        ops.push(Op {
-            kind: OpKind::RegistryDelete {
-                hive,
-                path: path.to_string(),
-                name: name.to_string(),
-            },
-            state: if current.is_some() || unreadable.is_some() {
-                OpState::WillApply
-            } else {
-                OpState::Absent
-            },
-            detail: unreadable.clone().unwrap_or_default(),
-        });
+        let state = if current.is_some() || unreadable.is_some() {
+            OpState::WillApply
+        } else {
+            OpState::Absent
+        };
+        ops.push(
+            Op::new(
+                OpKind::RegistryDelete {
+                    root,
+                    path: path.to_string(),
+                    name: name.to_string(),
+                },
+                state,
+            )
+            .with_detail(unreadable.unwrap_or_default()),
+        );
         return;
     }
     let wanted = match (kind, value) {
@@ -517,20 +589,23 @@ fn plan_registry(
     } else {
         OpState::WillApply
     };
-    ops.push(Op {
-        kind: OpKind::RegistrySet {
-            hive,
-            path: path.to_string(),
-            name: name.to_string(),
-            value: wanted,
-        },
-        state,
-        detail: match (current, unreadable) {
-            (Some(v), _) => format!("currently {}", show_value(&v)),
-            (None, Some(why)) => why,
-            (None, None) => String::new(),
-        },
-    });
+    let detail = match (current, unreadable) {
+        (Some(v), _) => format!("currently {}", show_value(&v)),
+        (None, Some(why)) => why,
+        (None, None) => String::new(),
+    };
+    ops.push(
+        Op::new(
+            OpKind::RegistrySet {
+                root,
+                path: path.to_string(),
+                name: name.to_string(),
+                value: wanted,
+            },
+            state,
+        )
+        .with_detail(detail),
+    );
 }
 
 fn plan_tasks(patterns: &[String], action: TaskAction, snap: &Snapshot, ops: &mut Vec<Op>) {
@@ -541,13 +616,12 @@ fn plan_tasks(patterns: &[String], action: TaskAction, snap: &Snapshot, ops: &mu
             .filter(|t| glob(pattern, &t.path))
             .collect();
         if matches.is_empty() {
-            ops.push(Op {
-                kind: OpKind::TaskPattern {
+            ops.push(Op::new(
+                OpKind::TaskPattern {
                     pattern: pattern.clone(),
                 },
-                state: OpState::Absent,
-                detail: String::new(),
-            });
+                OpState::Absent,
+            ));
             continue;
         }
         for task in matches {
@@ -569,11 +643,7 @@ fn plan_tasks(patterns: &[String], action: TaskAction, snap: &Snapshot, ops: &mu
                     OpState::WillApply,
                 ),
             };
-            ops.push(Op {
-                kind,
-                state,
-                detail: String::new(),
-            });
+            ops.push(Op::new(kind, state));
         }
     }
 }
@@ -584,15 +654,14 @@ fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
             p.trim_end_matches(".exe")
                 .eq_ignore_ascii_case(name.trim_end_matches(".exe"))
         });
-        ops.push(Op {
-            kind: OpKind::Kill { name: name.clone() },
-            state: if running {
+        ops.push(Op::new(
+            OpKind::Kill { name: name.clone() },
+            if running {
                 OpState::WillApply
             } else {
                 OpState::Absent
             },
-            detail: String::new(),
-        });
+        ));
     }
 }
 
@@ -600,33 +669,60 @@ fn plan_run(candidates: &[String], args: &[String], sys: &dyn Inspect, ops: &mut
     for candidate in candidates {
         let exe = PathBuf::from(expand_env(candidate));
         if matches!(sys.path_info(&exe), Ok(Some(_))) {
-            ops.push(Op {
-                kind: OpKind::Run {
+            ops.push(Op::new(
+                OpKind::Run {
                     exe,
                     args: args.to_vec(),
                 },
-                state: OpState::WillApply,
-                detail: String::new(),
-            });
+                OpState::WillApply,
+            ));
             return;
         }
     }
-    ops.push(Op {
-        kind: OpKind::Run {
-            exe: PathBuf::from(expand_env(&candidates[0])),
-            args: args.to_vec(),
-        },
-        state: OpState::Absent,
-        detail: "no candidate executable found".into(),
-    });
+    ops.push(
+        Op::new(
+            OpKind::Run {
+                exe: PathBuf::from(expand_env(&candidates[0])),
+                args: args.to_vec(),
+            },
+            OpState::Absent,
+        )
+        .with_detail("no candidate executable found"),
+    );
 }
 
-fn plan_delete(paths: &[String], sys: &dyn Inspect, ops: &mut Vec<Op>, notes: &mut Vec<String>) {
+/// Expands the profile variables against a specific profile folder so a step can reach
+/// accounts other than the one running winprune.
+pub fn expand_for_profile(raw: &str, folder: Option<&std::path::Path>) -> PathBuf {
+    let Some(folder) = folder else {
+        return PathBuf::from(expand_env(raw));
+    };
+    let base = folder.to_string_lossy();
+    let upper = raw.to_ascii_uppercase();
+    let replaced = if let Some(rest) = upper.strip_prefix("%USERPROFILE%") {
+        format!("{base}{}", &raw[raw.len() - rest.len()..])
+    } else if let Some(rest) = upper.strip_prefix("%LOCALAPPDATA%") {
+        format!("{base}\\AppData\\Local{}", &raw[raw.len() - rest.len()..])
+    } else if let Some(rest) = upper.strip_prefix("%APPDATA%") {
+        format!("{base}\\AppData\\Roaming{}", &raw[raw.len() - rest.len()..])
+    } else {
+        raw.to_string()
+    };
+    PathBuf::from(expand_env(&replaced))
+}
+
+fn plan_delete(
+    paths: &[String],
+    folder: Option<&std::path::Path>,
+    who: &str,
+    sys: &dyn Inspect,
+    ops: &mut Vec<Op>,
+    notes: &mut Vec<String>,
+) {
     for raw in paths {
-        let path = PathBuf::from(expand_env(raw));
+        let path = expand_for_profile(raw, folder);
         match sys.path_info(&path) {
             Ok(Some(info)) => {
-                let detail = format!("{} files, {}", info.files, human_bytes(info.bytes));
                 if info.files > 0 {
                     notes.push(format!(
                         "{} holds {} files ({}).",
@@ -635,17 +731,19 @@ fn plan_delete(paths: &[String], sys: &dyn Inspect, ops: &mut Vec<Op>, notes: &m
                         human_bytes(info.bytes)
                     ));
                 }
-                ops.push(Op {
-                    kind: OpKind::Delete { path },
-                    state: OpState::WillApply,
-                    detail,
-                });
+                ops.push(
+                    Op::new(OpKind::Delete { path }, OpState::WillApply).with_detail(format!(
+                        "{who}: {} files, {}",
+                        info.files,
+                        human_bytes(info.bytes)
+                    )),
+                );
             }
-            _ => ops.push(Op {
-                kind: OpKind::Delete { path },
-                state: OpState::Absent,
-                detail: String::new(),
-            }),
+            Ok(None) => ops.push(Op::new(OpKind::Delete { path }, OpState::Absent)),
+            Err(e) => ops.push(
+                Op::new(OpKind::Delete { path }, OpState::WillApply)
+                    .with_detail(format!("{who}: could not inspect: {e}")),
+            ),
         }
     }
 }
@@ -773,7 +871,7 @@ value = 1
     }
 
     #[test]
-    fn appx_pattern_matches_installed_and_flags_non_removable() {
+    fn appx_deprovisions_before_removing_and_flags_non_removable() {
         let sys = Fake::default()
             .with_package("Microsoft.DemoApp", false)
             .with_package("Microsoft.DemoCore", true)
@@ -788,16 +886,16 @@ value = 1
             &sys,
         );
         let item = &plan.items[0];
+        assert!(matches!(item.ops[0].kind, OpKind::Deprovision { .. }));
         let states: Vec<OpState> = item.ops.iter().map(|o| o.state).collect();
         assert_eq!(
             states,
             vec![
                 OpState::WillApply,
-                OpState::NonRemovable,
-                OpState::WillApply
+                OpState::WillApply,
+                OpState::NonRemovable
             ]
         );
-        assert!(matches!(item.ops[2].kind, OpKind::Deprovision { .. }));
     }
 
     #[test]
@@ -843,8 +941,12 @@ value = 1
 
     #[test]
     fn registry_value_already_set_is_already_done() {
-        let sys =
-            Fake::default().with_registry(Hive::Hklm, "SOFTWARE\\Demo", "Flag", RegValue::Dword(1));
+        let sys = Fake::default().with_registry(
+            &RegRoot::Machine,
+            "SOFTWARE\\Demo",
+            "Flag",
+            RegValue::Dword(1),
+        );
         let plan = build_plan(
             &catalog(),
             &Selection::level(Level::Medium),
@@ -921,5 +1023,91 @@ processes = ["DemoApp", "Ghost"]
                 OpState::Absent
             ]
         );
+    }
+
+    const SCOPE_CATALOG: &str = r#"
+[[item]]
+id = "privacy.users"
+name = "Users"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Demo"
+name = "Flag"
+type = "dword"
+value = 0
+[[item.step]]
+kind = "delete"
+scope = "all-users"
+paths = ["%LOCALAPPDATA%\\Demo"]
+"#;
+
+    #[test]
+    fn all_users_scope_fans_out_to_loaded_profiles_and_default() {
+        let catalog = Catalog::parse("t", SCOPE_CATALOG).unwrap();
+        let sys = Fake::default()
+            .with_profile("S-1-5-21-1", "alice", "C:\\Users\\alice", true)
+            .with_profile("S-1-5-21-2", "bob", "C:\\Users\\bob", true)
+            .with_profile("S-1-5-21-3", "carol", "C:\\Users\\carol", false)
+            .interactive("S-1-5-21-1")
+            .with_path("C:\\Users\\bob\\AppData\\Local\\Demo", 3, 300);
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let ops = &plan.items[0].ops;
+        let roots: Vec<String> = ops
+            .iter()
+            .filter_map(|o| match &o.kind {
+                OpKind::RegistrySet { root, .. } => Some(root.to_string()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(roots, vec!["HKU:alice", "HKU:bob", "HKU:Default"]);
+        let deletes: Vec<(String, OpState)> = ops
+            .iter()
+            .filter_map(|o| match &o.kind {
+                OpKind::Delete { path } => Some((path.display().to_string(), o.state)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deletes.len(), 4, "{deletes:?}");
+        assert_eq!(
+            deletes[1],
+            (
+                "C:\\Users\\bob\\AppData\\Local\\Demo".to_string(),
+                OpState::WillApply
+            )
+        );
+        assert_eq!(deletes[3].0, "C:\\Users\\Default\\AppData\\Local\\Demo");
+        assert_eq!(plan.user.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn user_scope_without_known_interactive_user_falls_back_to_hkcu() {
+        let catalog =
+            Catalog::parse("t", SCOPE_CATALOG.replace("all-users", "user").as_str()).unwrap();
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            false,
+            &Fake::default(),
+        );
+        assert!(matches!(
+            &plan.items[0].ops[0].kind,
+            OpKind::RegistrySet {
+                root: RegRoot::CurrentUser,
+                ..
+            }
+        ));
     }
 }

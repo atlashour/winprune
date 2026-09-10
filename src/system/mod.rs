@@ -7,8 +7,10 @@ pub mod recorder;
 #[cfg(windows)]
 pub mod windows;
 
-use crate::catalog::{Hive, Startup};
-use std::path::Path;
+use crate::catalog::Startup;
+use serde::Serialize;
+use std::fmt;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +18,7 @@ pub struct AppxPackage {
     pub name: String,
     pub full_name: String,
     pub family: String,
+    /// Signed as part of Windows or a framework: removal is refused or pointless.
     pub non_removable: bool,
 }
 
@@ -45,6 +48,41 @@ pub enum Provisioned {
     NeedsElevation,
 }
 
+/// A user account with a profile folder on this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserProfile {
+    pub sid: String,
+    pub name: String,
+    pub path: PathBuf,
+    /// Its registry hive is mounted under HKEY_USERS right now.
+    pub loaded: bool,
+}
+
+/// Where a registry step lands. Per-user steps are addressed by SID so the same op can
+/// run against the interactive user, any other loaded profile, or the Default profile
+/// that seeds new accounts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "root", rename_all = "snake_case")]
+pub enum RegRoot {
+    Machine,
+    Classes,
+    CurrentUser,
+    User { sid: String, name: String },
+    DefaultProfile,
+}
+
+impl fmt::Display for RegRoot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RegRoot::Machine => f.write_str("HKLM"),
+            RegRoot::Classes => f.write_str("HKCR"),
+            RegRoot::CurrentUser => f.write_str("HKCU"),
+            RegRoot::User { name, .. } => write!(f, "HKU:{name}"),
+            RegRoot::DefaultProfile => f.write_str("HKU:Default"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
 pub enum RegValue {
@@ -58,6 +96,8 @@ pub enum RegValue {
 pub enum SysError {
     #[error("access denied")]
     AccessDenied,
+    #[error("profile hive is not loaded")]
+    NotLoaded,
     #[error("{0}")]
     Other(String),
 }
@@ -68,13 +108,20 @@ pub trait Inspect {
     fn service(&self, name: &str) -> Result<Option<ServiceInfo>, SysError>;
     fn registry_value(
         &self,
-        hive: Hive,
+        root: &RegRoot,
         path: &str,
         name: &str,
     ) -> Result<Option<RegValue>, SysError>;
     fn tasks(&self) -> Result<Vec<TaskInfo>, SysError>;
     fn running_processes(&self) -> Result<Vec<String>, SysError>;
     fn path_info(&self, path: &Path) -> Result<Option<PathInfo>, SysError>;
+    /// Every account with a profile folder, loaded or not.
+    fn user_profiles(&self) -> Result<Vec<UserProfile>, SysError>;
+    /// The account winprune is acting for: the one that started it, even after the
+    /// UAC relaunch ran it as a different administrator.
+    fn interactive_user(&self) -> Option<UserProfile>;
+    /// Folder of the Default profile (normally C:\Users\Default).
+    fn default_profile_path(&self) -> Option<PathBuf>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,8 +136,9 @@ pub trait Apply {
     fn deprovision_package(&mut self, family: &str) -> Outcome;
     fn stop_service(&mut self, name: &str) -> Outcome;
     fn set_service_startup(&mut self, name: &str, startup: Startup) -> Outcome;
-    fn registry_set(&mut self, hive: Hive, path: &str, name: &str, value: &RegValue) -> Outcome;
-    fn registry_delete(&mut self, hive: Hive, path: &str, name: &str) -> Outcome;
+    fn registry_set(&mut self, root: &RegRoot, path: &str, name: &str, value: &RegValue)
+    -> Outcome;
+    fn registry_delete(&mut self, root: &RegRoot, path: &str, name: &str) -> Outcome;
     fn task_disable(&mut self, path: &str) -> Outcome;
     fn task_delete(&mut self, path: &str) -> Outcome;
     fn kill_process(&mut self, name: &str) -> Outcome;

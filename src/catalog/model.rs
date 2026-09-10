@@ -164,6 +164,18 @@ pub enum TaskAction {
     Delete,
 }
 
+/// Which user profiles a per-user step reaches. `User` is the account that started
+/// winprune (resolved even after the UAC relaunch), `AllUsers` adds every profile
+/// loaded on the machine plus the Default profile that seeds new accounts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    #[default]
+    User,
+    AllUsers,
+    DefaultProfile,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Step {
@@ -184,6 +196,8 @@ pub enum Step {
         value: Option<toml::Value>,
         #[serde(default)]
         delete: bool,
+        #[serde(default)]
+        scope: Scope,
     },
     Task {
         patterns: Vec<String>,
@@ -199,6 +213,8 @@ pub enum Step {
     },
     Delete {
         paths: Vec<String>,
+        #[serde(default)]
+        scope: Scope,
     },
 }
 

@@ -1,5 +1,5 @@
-use super::{Apply, Outcome, RegValue};
-use crate::catalog::{Hive, Startup};
+use super::{Apply, Outcome, RegRoot, RegValue};
+use crate::catalog::Startup;
 use std::path::Path;
 
 /// `Apply` implementation behind `--dry-run`: every call succeeds and is written down.
@@ -32,12 +32,18 @@ impl Apply for Recorder {
         self.note(format!("service {name} -> {startup}"))
     }
 
-    fn registry_set(&mut self, hive: Hive, path: &str, name: &str, value: &RegValue) -> Outcome {
-        self.note(format!("registry set {hive}\\{path}\\{name} = {value:?}"))
+    fn registry_set(
+        &mut self,
+        root: &RegRoot,
+        path: &str,
+        name: &str,
+        value: &RegValue,
+    ) -> Outcome {
+        self.note(format!("registry set {root}\\{path}\\{name} = {value:?}"))
     }
 
-    fn registry_delete(&mut self, hive: Hive, path: &str, name: &str) -> Outcome {
-        self.note(format!("registry delete {hive}\\{path}\\{name}"))
+    fn registry_delete(&mut self, root: &RegRoot, path: &str, name: &str) -> Outcome {
+        self.note(format!("registry delete {root}\\{path}\\{name}"))
     }
 
     fn task_disable(&mut self, path: &str) -> Outcome {

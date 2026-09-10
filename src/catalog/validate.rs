@@ -1,4 +1,4 @@
-use super::model::{Item, Level, Risk, Step};
+use super::model::{Hive, Item, Level, Risk, Scope, Step};
 use std::collections::HashSet;
 
 /// Roots a `delete` step may point at. Anything outside is a catalog bug, not a policy
@@ -84,15 +84,19 @@ fn check_step(step: &Step) -> Vec<String> {
             }
         }
         Step::Registry {
+            hive,
             path,
             name,
             kind,
             value,
             delete,
-            ..
+            scope,
         } => {
             if path.trim().is_empty() || name.trim().is_empty() {
                 problems.push("registry step needs path and name".into());
+            }
+            if *scope != Scope::User && *hive != Hive::Hkcu {
+                problems.push("scope is only meaningful with hive = \"hkcu\"".into());
             }
             match (delete, kind, value) {
                 (true, None, None) => {}
@@ -120,7 +124,7 @@ fn check_step(step: &Step) -> Vec<String> {
                 problems.push("run step without candidates".into());
             }
         }
-        Step::Delete { paths } => {
+        Step::Delete { paths, scope } => {
             if paths.is_empty() {
                 problems.push("delete step without paths".into());
             }
@@ -132,15 +136,26 @@ fn check_step(step: &Step) -> Vec<String> {
                 {
                     problems.push(format!("delete path '{path}' is outside the allowed roots"));
                 }
+                if *scope != Scope::User && !is_profile_path(&upper) {
+                    problems.push(format!(
+                        "delete path '{path}' is not inside a user profile, scope must be user"
+                    ));
+                }
             }
         }
     }
     problems
 }
 
+fn is_profile_path(upper: &str) -> bool {
+    upper.starts_with("%LOCALAPPDATA%\\")
+        || upper.starts_with("%APPDATA%\\")
+        || upper.starts_with("%USERPROFILE%\\")
+}
+
 fn deletes_user_data(step: &Step) -> bool {
     match step {
-        Step::Delete { paths } => paths.iter().any(|p| {
+        Step::Delete { paths, .. } => paths.iter().any(|p| {
             let upper = p.to_ascii_uppercase();
             upper.starts_with("%USERPROFILE%\\") && !upper.contains("\\APPDATA\\")
         }),
@@ -202,6 +217,26 @@ mod tests {
             .replace("\"medium\"", "\"high\"");
         let err = Catalog::parse("t", &text).unwrap_err().to_string();
         assert!(err.contains("needs a warning"), "{err}");
+    }
+
+    #[test]
+    fn scope_requires_hkcu() {
+        let text = item(
+            "",
+            "[[item.step]]\nkind = \"registry\"\nhive = \"hklm\"\nscope = \"all-users\"\npath = \"SOFTWARE\\\\X\"\nname = \"Y\"\ntype = \"dword\"\nvalue = 1",
+        );
+        let err = Catalog::parse("t", &text).unwrap_err().to_string();
+        assert!(err.contains("only meaningful with hive"), "{err}");
+    }
+
+    #[test]
+    fn scoped_delete_must_stay_inside_the_profile() {
+        let text = item(
+            "",
+            "[[item.step]]\nkind = \"delete\"\nscope = \"all-users\"\npaths = [\"%PROGRAMDATA%\\\\X\"]",
+        );
+        let err = Catalog::parse("t", &text).unwrap_err().to_string();
+        assert!(err.contains("scope must be user"), "{err}");
     }
 
     #[test]

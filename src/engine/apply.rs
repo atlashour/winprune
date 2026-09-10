@@ -20,7 +20,7 @@ pub fn apply_plan(
                     report.tally.absent += 1;
                     continue;
                 }
-                OpState::NonRemovable => Outcome::Skipped("not removable".into()),
+                OpState::NonRemovable => Outcome::Skipped("part of Windows".into()),
                 OpState::NeedsElevation => Outcome::Skipped("needs elevation".into()),
             };
             let result = OpResult {
@@ -43,12 +43,12 @@ fn run_op(kind: &OpKind, sys: &mut dyn Apply) -> Outcome {
         OpKind::StopService { name } => sys.stop_service(name),
         OpKind::ServiceStartup { name, startup } => sys.set_service_startup(name, *startup),
         OpKind::RegistrySet {
-            hive,
+            root,
             path,
             name,
             value,
-        } => sys.registry_set(*hive, path, name, value),
-        OpKind::RegistryDelete { hive, path, name } => sys.registry_delete(*hive, path, name),
+        } => sys.registry_set(root, path, name, value),
+        OpKind::RegistryDelete { root, path, name } => sys.registry_delete(root, path, name),
         OpKind::TaskDisable { path } => sys.task_disable(path),
         OpKind::TaskDelete { path } => sys.task_delete(path),
         OpKind::Kill { name } => sys.kill_process(name),
@@ -73,7 +73,7 @@ impl Tally {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{Catalog, Level};
+    use crate::catalog::{Catalog, Level, Startup};
     use crate::engine::{Selection, build_plan};
     use crate::system::fake::Fake;
     use crate::system::recorder::Recorder;
@@ -112,8 +112,6 @@ startup = "disabled"
             .with_service("DemoSvc", Startup::Automatic, true);
         build_plan(&catalog, &Selection::level(level), 22631, true, &sys)
     }
-
-    use crate::catalog::Startup;
 
     #[test]
     fn apply_only_touches_selected_will_apply_ops() {
