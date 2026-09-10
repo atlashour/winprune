@@ -1,17 +1,19 @@
 use crate::catalog::{Catalog, Level};
 use crate::engine::{self, Log, OpState, Plan, Selection};
+use crate::handoff::{self, Request};
 use crate::os;
 use crate::system::Outcome;
 use crate::system::recorder::Recorder;
 use clap::{Args, Parser, Subcommand};
 use std::collections::HashSet;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_USAGE: i32 = 1;
 pub const EXIT_FAILURES: i32 = 2;
 pub const EXIT_ELEVATION: i32 = 3;
+pub const EXIT_ABORTED: i32 = 4;
 
 #[derive(Parser, Debug)]
 #[command(name = "winprune", version, about = "Windows 10/11 debloater", long_about = None)]
@@ -41,9 +43,6 @@ pub enum Command {
         /// Do not ask for confirmation
         #[arg(long, short = 'y')]
         yes: bool,
-        /// Set by the relaunched elevated process
-        #[arg(long, hide = true)]
-        elevated: bool,
     },
     /// Inspect the item catalog
     Catalog {
@@ -77,9 +76,9 @@ pub struct Filter {
     /// Add these item ids on top of the level (comma separated)
     #[arg(long, value_delimiter = ',', global = true)]
     pub add: Vec<String>,
-    /// Set when the TUI relaunched itself elevated; opens straight at the confirmation
-    #[arg(long, hide = true, global = true)]
-    pub relaunched: bool,
+    /// Folder written by the launcher for the elevated copy; see handoff.rs
+    #[arg(long, value_name = "DIR", hide = true, global = true)]
+    pub run_dir: Option<PathBuf>,
 }
 
 impl Filter {
@@ -94,6 +93,47 @@ impl Filter {
             skip: self.skip.iter().cloned().collect::<HashSet<_>>(),
             extra: self.add.iter().cloned().collect::<HashSet<_>>(),
         }
+    }
+
+    pub fn request(&self, dry_run: bool, tui: bool) -> Request {
+        Request {
+            level: self.level,
+            only: self.only.clone(),
+            skip: self.skip.clone(),
+            add: self.add.clone(),
+            catalog: self
+                .catalog
+                .as_ref()
+                .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone())),
+            dry_run,
+            interactive_sid: None,
+            tui,
+        }
+    }
+
+    fn from_request(request: &Request, run_dir: PathBuf) -> Filter {
+        Filter {
+            level: request.level,
+            catalog: request.catalog.clone(),
+            only: request.only.clone(),
+            skip: request.skip.clone(),
+            add: request.add.clone(),
+            run_dir: Some(run_dir),
+        }
+    }
+}
+
+/// Everything a run needs to know about where it is running.
+#[derive(Clone)]
+pub struct Context {
+    pub info: os::OsInfo,
+    pub interactive_sid: Option<String>,
+    pub run_dir: Option<PathBuf>,
+}
+
+impl Context {
+    pub fn system(&self) -> crate::system::windows::WindowsSystem {
+        crate::system::windows::WindowsSystem::new(self.info.elevated, self.interactive_sid.clone())
     }
 }
 
@@ -112,6 +152,19 @@ pub fn load_catalog(overlay: Option<&PathBuf>) -> Result<Catalog, String> {
 }
 
 pub fn run(cli: Cli) -> i32 {
+    let info = os::detect();
+
+    // The elevated copy takes its whole configuration from the request file.
+    if let Some(dir) = cli.filter.run_dir.clone() {
+        return match handoff::read_request(&dir) {
+            Ok(request) => run_request(request, dir, info),
+            Err(e) => {
+                eprintln!("{e}");
+                EXIT_USAGE
+            }
+        };
+    }
+
     let catalog = match load_catalog(cli.filter.catalog.as_ref()) {
         Ok(c) => c,
         Err(e) => {
@@ -119,13 +172,17 @@ pub fn run(cli: Cli) -> i32 {
             return EXIT_USAGE;
         }
     };
-    let info = os::detect();
+    let ctx = Context {
+        info,
+        interactive_sid: None,
+        run_dir: None,
+    };
 
     match cli.command {
-        None => crate::tui::run(catalog, cli.filter, info),
+        None => crate::tui::run(catalog, cli.filter, ctx, false),
         Some(Command::Catalog { what }) => catalog_command(&catalog, what),
         Some(Command::Plan { json, all }) => {
-            let plan = build(&catalog, &cli.filter, info);
+            let plan = build(&catalog, &cli.filter, &ctx);
             if json {
                 println!(
                     "{}",
@@ -136,21 +193,40 @@ pub fn run(cli: Cli) -> i32 {
             }
             EXIT_OK
         }
-        Some(Command::Apply {
-            dry_run,
-            yes,
-            elevated,
-        }) => apply_command(&catalog, &cli.filter, info, dry_run, yes, elevated),
+        Some(Command::Apply { dry_run, yes }) => {
+            apply_command(&catalog, &cli.filter, &ctx, dry_run, yes)
+        }
     }
 }
 
-fn build(catalog: &Catalog, filter: &Filter, info: os::OsInfo) -> Plan {
-    let sys = crate::system::windows::WindowsSystem::new();
+fn run_request(request: Request, dir: PathBuf, info: os::OsInfo) -> i32 {
+    let filter = Filter::from_request(&request, dir.clone());
+    let catalog = match load_catalog(filter.catalog.as_ref()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            return EXIT_USAGE;
+        }
+    };
+    let ctx = Context {
+        info,
+        interactive_sid: request.interactive_sid.clone(),
+        run_dir: Some(dir),
+    };
+    if request.tui {
+        crate::tui::run(catalog, filter, ctx, true)
+    } else {
+        apply_command(&catalog, &filter, &ctx, request.dry_run, true)
+    }
+}
+
+fn build(catalog: &Catalog, filter: &Filter, ctx: &Context) -> Plan {
+    let sys = ctx.system();
     engine::build_plan(
         catalog,
         &filter.selection(),
-        info.build,
-        info.elevated,
+        ctx.info.build,
+        ctx.info.elevated,
         &sys,
     )
 }
@@ -189,6 +265,12 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
         plan.level,
         plan.level.describe()
     );
+    if let Some(user) = &plan.user {
+        let _ = writeln!(
+            out,
+            "per-user settings are written for {user} and the Default profile"
+        );
+    }
     let mut category = None;
     for item in &plan.items {
         if category != Some(item.category) {
@@ -244,36 +326,26 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
 fn apply_command(
     catalog: &Catalog,
     filter: &Filter,
-    info: os::OsInfo,
+    ctx: &Context,
     dry_run: bool,
     yes: bool,
-    elevated: bool,
 ) -> i32 {
-    if !dry_run && !info.elevated {
+    if !dry_run && !ctx.info.elevated {
         if !yes && !confirm("This will change the system. Type yes to continue: ") {
-            return EXIT_USAGE;
+            return EXIT_ABORTED;
         }
-        let mut args: Vec<String> = std::env::args().skip(1).collect();
-        if !args.iter().any(|a| a == "--yes" || a == "-y") {
-            args.push("--yes".into());
-        }
-        args.push("--elevated".into());
-        return match os::relaunch_elevated(&args) {
-            Ok(code) => code,
-            Err(e) => {
-                eprintln!("{e}");
-                EXIT_ELEVATION
-            }
-        };
+        let mut request = filter.request(false, false);
+        request.interactive_sid = crate::system::windows::profiles::current_sid();
+        return handoff::run_elevated(&request);
     }
 
-    let plan = build(catalog, filter, info);
+    let plan = build(catalog, filter, ctx);
     print!("{}", render_plan(&plan, false));
     if !dry_run && !yes && !confirm("Type yes to apply: ") {
-        return EXIT_USAGE;
+        return EXIT_ABORTED;
     }
 
-    let mut log = Log::open(info.elevated);
+    let mut log = Log::open(ctx.info.elevated);
     log.line(&format!(
         "apply level {} dry_run {} build {}",
         plan.level, dry_run, plan.build
@@ -292,7 +364,7 @@ fn apply_command(
         let mut rec = Recorder::default();
         engine::apply_plan(&plan, &mut rec, true, &mut on_event)
     } else {
-        let mut sys = crate::system::windows::WindowsSystem::new();
+        let mut sys = ctx.system();
         engine::apply_plan(&plan, &mut sys, false, &mut on_event)
     };
     log.line(&report.summary());
@@ -302,10 +374,10 @@ fn apply_command(
         None => println!("report could not be written under {}", log.dir().display()),
     }
     println!("log: {}", log.path().display());
-
-    if elevated {
+    if let Some(dir) = &ctx.run_dir {
+        handoff::write_report(dir, &report);
         // The UAC relaunch opens its own console; keep it until the user has read this.
-        confirm("Press Enter to close.");
+        pause("Press Enter to close.");
     }
     if report.tally.failed > 0 {
         EXIT_FAILURES
@@ -322,6 +394,18 @@ fn confirm(prompt: &str) -> bool {
         return false;
     }
     answer.trim().eq_ignore_ascii_case("yes")
+}
+
+fn pause(prompt: &str) {
+    print!("{prompt}");
+    let _ = io::stdout().flush();
+    let mut answer = String::new();
+    let _ = io::stdin().read_line(&mut answer);
+}
+
+#[allow(dead_code)]
+fn _paths_are_absolute(p: &Path) -> bool {
+    p.is_absolute()
 }
 
 #[cfg(test)]
@@ -347,5 +431,22 @@ mod tests {
         let cli = Cli::try_parse_from(["winprune", "--level", "high"]).unwrap();
         assert!(cli.command.is_none());
         assert_eq!(cli.filter.level, Level::High);
+    }
+
+    #[test]
+    fn request_carries_the_whole_filter() {
+        let cli = Cli::try_parse_from([
+            "winprune", "apply", "--level", "high", "--skip", "a.b", "--add", "c.d", "--only",
+            "e.f",
+        ])
+        .unwrap();
+        let request = cli.filter.request(true, false);
+        assert_eq!(request.level, Level::High);
+        assert_eq!(request.skip, vec!["a.b"]);
+        assert_eq!(request.add, vec!["c.d"]);
+        assert_eq!(request.only, vec!["e.f"]);
+        assert!(request.dry_run);
+        let back = Filter::from_request(&request, PathBuf::from("x"));
+        assert_eq!(back.only, vec!["e.f"]);
     }
 }

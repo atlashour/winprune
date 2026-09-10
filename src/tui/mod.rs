@@ -5,9 +5,9 @@ mod app;
 mod ui;
 
 use crate::catalog::Catalog;
-use crate::cli::{EXIT_ELEVATION, EXIT_FAILURES, EXIT_OK, EXIT_USAGE, Filter};
+use crate::cli::{Context, EXIT_ABORTED, EXIT_FAILURES, EXIT_OK, EXIT_USAGE, Filter};
 use crate::engine::{self, Log, OpResult, Report};
-use crate::os::{self, OsInfo};
+use crate::handoff;
 use crate::system::recorder::Recorder;
 use app::{Action, App, Screen};
 use crossterm::event::{self, Event, KeyEventKind};
@@ -19,22 +19,43 @@ enum Progress {
     Done(Box<Report>),
 }
 
-pub fn run(catalog: Catalog, filter: Filter, info: OsInfo) -> i32 {
-    let sys = crate::system::windows::WindowsSystem::new();
+pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> i32 {
+    let sys = ctx.system();
     let selection = filter.selection();
-    let plan = engine::build_plan(&catalog, &selection, info.build, info.elevated, &sys);
-    let mut app = App::new(plan, selection, info);
-    if filter.relaunched {
+    let plan = engine::build_plan(
+        &catalog,
+        &selection,
+        ctx.info.build,
+        ctx.info.elevated,
+        &sys,
+    );
+    let mut app = App::new(plan, selection, ctx.info, filter.catalog.clone());
+    if at_confirm {
         app.screen = Screen::Confirm;
     }
 
     let mut terminal = ratatui::init();
-    let code = event_loop(&mut terminal, &mut app);
+    let code = event_loop(&mut terminal, &mut app, &ctx);
     ratatui::restore();
+    if let Some(dir) = &ctx.run_dir {
+        if let Some(report) = &app.report {
+            handoff::write_report(dir, report);
+        }
+        // This is the elevated window; let the user read the result before it closes.
+        if app.report.is_some() {
+            println!(
+                "{}",
+                app.report.as_ref().map(|r| r.summary()).unwrap_or_default()
+            );
+        }
+        println!("Press Enter to close.");
+        let mut line = String::new();
+        let _ = std::io::stdin().read_line(&mut line);
+    }
     code
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> i32 {
+fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App, ctx: &Context) -> i32 {
     let mut worker: Option<mpsc::Receiver<Progress>> = None;
     let mut log: Option<Log> = None;
     loop {
@@ -82,19 +103,16 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> i32 {
             Action::Quit => {
                 return match &app.report {
                     Some(r) if r.tally.failed > 0 => EXIT_FAILURES,
-                    _ => EXIT_OK,
+                    Some(_) => EXIT_OK,
+                    None if ctx.run_dir.is_some() => EXIT_ABORTED,
+                    None => EXIT_OK,
                 };
             }
             Action::RelaunchElevated => {
                 ratatui::restore();
-                let code = os::relaunch_elevated(&app.relaunch_args());
-                return match code {
-                    Ok(code) => code,
-                    Err(e) => {
-                        eprintln!("{e}");
-                        EXIT_ELEVATION
-                    }
-                };
+                let mut request = app.request();
+                request.interactive_sid = crate::system::windows::profiles::current_sid();
+                return handoff::run_elevated(&request);
             }
             Action::StartApply => {
                 let (tx, rx) = mpsc::channel();
@@ -106,6 +124,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> i32 {
                     plan.level, dry_run, plan.build
                 ));
                 log = Some(l);
+                let worker_ctx = ctx.clone();
                 std::thread::spawn(move || {
                     let mut on_event = |r: &OpResult| {
                         let _ = tx.send(Progress::Op(r.clone()));
@@ -114,7 +133,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> i32 {
                         let mut rec = Recorder::default();
                         engine::apply_plan(&plan, &mut rec, true, &mut on_event)
                     } else {
-                        let mut sys = crate::system::windows::WindowsSystem::new();
+                        let mut sys = worker_ctx.system();
                         engine::apply_plan(&plan, &mut sys, false, &mut on_event)
                     };
                     let _ = tx.send(Progress::Done(Box::new(report)));
@@ -182,6 +201,7 @@ paths = ["%USERPROFILE%\\OneDrive"]
                 build: 26100,
                 elevated: false,
             },
+            None,
         )
     }
 
@@ -264,12 +284,14 @@ paths = ["%USERPROFILE%\\OneDrive"]
     }
 
     #[test]
-    fn relaunch_args_reproduce_selection() {
+    fn request_reproduces_selection() {
         let mut a = app(Level::High);
         press(&mut a, KeyCode::Char(' '));
-        assert_eq!(
-            a.relaunch_args(),
-            vec!["--level", "high", "--skip", "appx.demo", "--relaunched"]
-        );
+        let request = a.request();
+        assert_eq!(request.level, Level::High);
+        assert_eq!(request.skip, vec!["appx.demo"]);
+        assert!(request.add.is_empty());
+        assert!(request.tui);
+        assert!(!request.dry_run);
     }
 }

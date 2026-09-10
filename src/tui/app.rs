@@ -1,8 +1,10 @@
 use crate::catalog::{Category, Level, Risk};
 use crate::engine::{OpResult, Plan, Report, Selection};
+use crate::handoff::Request;
 use crate::os::OsInfo;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -51,15 +53,18 @@ pub struct App {
     pub report: Option<Report>,
     pub report_path: Option<String>,
     pub log_path: Option<String>,
+    /// Overlay file, carried over to the elevated copy.
+    pub catalog: Option<PathBuf>,
     rows: Vec<Row>,
 }
 
 impl App {
-    pub fn new(plan: Plan, selection: Selection, info: OsInfo) -> App {
+    pub fn new(plan: Plan, selection: Selection, info: OsInfo, catalog: Option<PathBuf>) -> App {
         let mut app = App {
             plan,
             selection,
             info,
+            catalog,
             screen: Screen::Select,
             pane: Pane::List,
             cursor: 0,
@@ -346,27 +351,22 @@ impl App {
         }
     }
 
-    /// Arguments that reproduce the current selection in a relaunched process.
-    pub fn relaunch_args(&self) -> Vec<String> {
-        let mut args = vec!["--level".to_string(), self.selection.level.to_string()];
-        let mut skip: Vec<&String> = self.selection.skip.iter().collect();
-        let mut add: Vec<&String> = self.selection.extra.iter().collect();
+    /// What the elevated copy needs to rebuild this exact selection and open at the
+    /// confirmation screen.
+    pub fn request(&self) -> Request {
+        let mut skip: Vec<String> = self.selection.skip.iter().cloned().collect();
+        let mut add: Vec<String> = self.selection.extra.iter().cloned().collect();
         skip.sort();
         add.sort();
-        if !skip.is_empty() {
-            args.push("--skip".into());
-            args.push(
-                skip.iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
+        Request {
+            level: self.selection.level,
+            only: self.selection.only.iter().flatten().cloned().collect(),
+            skip,
+            add,
+            catalog: self.catalog.clone(),
+            dry_run: self.dry_run,
+            interactive_sid: None,
+            tui: true,
         }
-        if !add.is_empty() {
-            args.push("--add".into());
-            args.push(add.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(","));
-        }
-        args.push("--relaunched".into());
-        args
     }
 }
