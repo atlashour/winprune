@@ -10,5 +10,5 @@ mod report;
 pub use apply::apply_plan;
 pub use expand::expand_env;
 pub use log::Log;
-pub use plan::{Op, OpKind, OpState, Plan, PlannedItem, Selection, build_plan};
-pub use report::{OpResult, Report, Tally};
+pub use plan::{OpState, Plan, PlannedItem, Selection, build_plan};
+pub use report::{OpResult, Report};

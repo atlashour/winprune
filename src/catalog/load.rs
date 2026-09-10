@@ -47,6 +47,7 @@ impl Catalog {
         Ok(catalog)
     }
 
+    #[cfg(test)]
     pub fn parse(source_name: &str, text: &str) -> Result<Catalog, CatalogError> {
         let catalog = Catalog {
             items: parse_items(source_name, text)?,
@@ -113,6 +114,7 @@ impl Catalog {
             .filter(move |item| item.windows.matches(build))
     }
 
+    #[cfg(test)]
     pub fn get(&self, id: &str) -> Option<&Item> {
         self.items.iter().find(|item| item.id == id)
     }

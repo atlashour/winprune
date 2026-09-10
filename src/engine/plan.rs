@@ -364,8 +364,12 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
     }
 }
 
+/// Case-insensitive glob. Backslashes are the escape character for the matcher, so task
+/// paths are compared with forward slashes on both sides.
 fn glob(pattern: &str, text: &str) -> bool {
-    glob_match::glob_match(&pattern.to_ascii_lowercase(), &text.to_ascii_lowercase())
+    let pattern = pattern.to_ascii_lowercase().replace('\\', "/");
+    let text = text.to_ascii_lowercase().replace('\\', "/");
+    glob_match::glob_match(&pattern, &text)
 }
 
 fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
@@ -866,5 +870,49 @@ value = 1
         assert_eq!(ids(&plan), vec!["appx.demo", "privacy.reg"]);
         plan.reselect(&Selection::level(Level::Max));
         assert_eq!(ids(&plan).len(), 4);
+    }
+
+    const TASK_CATALOG: &str = r#"
+[[item]]
+id = "telemetry.tasks"
+name = "Tasks"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = ["\\Microsoft\\Windows\\Demo\\*", "\\Nope\\*"]
+[[item.step]]
+kind = "kill"
+processes = ["DemoApp", "Ghost"]
+"#;
+
+    #[test]
+    fn tasks_and_processes_are_matched_against_the_snapshot() {
+        let catalog = Catalog::parse("t", TASK_CATALOG).unwrap();
+        let sys = Fake::default()
+            .with_task("\\Microsoft\\Windows\\Demo\\Collector", true)
+            .with_task("\\Microsoft\\Windows\\Demo\\Uploader", false)
+            .with_process("DemoApp.exe");
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let states: Vec<OpState> = plan.items[0].ops.iter().map(|o| o.state).collect();
+        assert_eq!(
+            states,
+            vec![
+                OpState::WillApply,
+                OpState::AlreadyDone,
+                OpState::Absent,
+                OpState::WillApply,
+                OpState::Absent
+            ]
+        );
     }
 }

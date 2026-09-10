@@ -10,8 +10,6 @@ pub enum Level {
 }
 
 impl Level {
-    pub const ALL: [Level; 3] = [Level::Medium, Level::High, Level::Max];
-
     pub fn describe(self) -> &'static str {
         match self {
             Level::Medium => "any machine: bloatware, telemetry, privacy policies",
@@ -202,20 +200,6 @@ pub enum Step {
     Delete {
         paths: Vec<String>,
     },
-}
-
-impl Step {
-    pub fn kind_name(&self) -> &'static str {
-        match self {
-            Step::Appx { .. } => "appx",
-            Step::Service { .. } => "service",
-            Step::Registry { .. } => "registry",
-            Step::Task { .. } => "task",
-            Step::Kill { .. } => "kill",
-            Step::Run { .. } => "run",
-            Step::Delete { .. } => "delete",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

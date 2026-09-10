@@ -2,7 +2,6 @@ use super::plan::Plan;
 use crate::catalog::Level;
 use crate::system::Outcome;
 use serde::Serialize;
-use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,20 +62,6 @@ impl Report {
             s.push_str(" (dry run, nothing was changed)");
         }
         s
-    }
-
-    pub fn to_text(&self) -> String {
-        let mut out = String::new();
-        for r in &self.results {
-            let (tag, note) = match &r.outcome {
-                Outcome::Done => ("ok", String::new()),
-                Outcome::Skipped(why) => ("skip", format!(" ({why})")),
-                Outcome::Failed(why) => ("FAIL", format!(" ({why})")),
-            };
-            let _ = writeln!(out, "{tag:>5}  {}  {}{}", r.item, r.op, note);
-        }
-        let _ = writeln!(out, "\n{}", self.summary());
-        out
     }
 }
 

@@ -77,6 +77,9 @@ pub struct Filter {
     /// Add these item ids on top of the level (comma separated)
     #[arg(long, value_delimiter = ',', global = true)]
     pub add: Vec<String>,
+    /// Set when the TUI relaunched itself elevated; opens straight at the confirmation
+    #[arg(long, hide = true, global = true)]
+    pub relaunched: bool,
 }
 
 impl Filter {
@@ -159,7 +162,7 @@ fn catalog_command(catalog: &Catalog, what: CatalogCommand) -> i32 {
             EXIT_OK
         }
         CatalogCommand::List => {
-            println!("{:<34} {:<7} {:<7} {}", "id", "level", "risk", "name");
+            println!("{:<34} {:<7} {:<7} name", "id", "level", "risk");
             for item in &catalog.items {
                 println!(
                     "{:<34} {:<7} {:<7} {}",
@@ -176,14 +179,15 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "Windows build {}, {}, level {}",
+        "Windows build {}, {}, level {} ({})",
         plan.build,
         if plan.elevated {
             "elevated"
         } else {
             "not elevated"
         },
-        plan.level
+        plan.level,
+        plan.level.describe()
     );
     let mut category = None;
     for item in &plan.items {
