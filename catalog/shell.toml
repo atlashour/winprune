@@ -1,0 +1,36 @@
+# Shell pieces that change how the desktop looks or behaves. Max level only.
+
+[[item]]
+id = "shell.widgets"
+name = "Widgets and news feed"
+category = "shell"
+level = "max"
+risk = "medium"
+summary = "Removes the Web Experience package behind Widgets and disables the news and interests feed by policy."
+warning = "The Widgets button disappears from the taskbar. On Windows 10 the news and interests taskbar feed goes away."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*WebExperience*"]
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Dsh"
+name = "AllowNewsAndInterests"
+type = "dword"
+value = 0
+
+[[item]]
+id = "shell.search-indexer"
+name = "Search indexer"
+category = "shell"
+level = "max"
+risk = "high"
+summary = "Disables the Windows Search service. Start menu and Explorer search stop working."
+warning = "Start menu search, Explorer search and Outlook search break. Only for kiosks without a shell."
+
+[[item.step]]
+kind = "service"
+names = ["WSearch"]
+startup = "disabled"

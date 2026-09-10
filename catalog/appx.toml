@@ -1,0 +1,438 @@
+# Preinstalled apps. Patterns are globs against the package name (not the family name),
+# so a rename that keeps the stem still matches. Non-removable packages are skipped by
+# the engine, never listed here.
+
+[[item]]
+id = "appx.cortana"
+name = "Cortana"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Cortana app package."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*549981C3F5F10*", "*Microsoft.Cortana*"]
+
+[[item]]
+id = "appx.help-and-tips"
+name = "Get Help, Get Started, Tips"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the onboarding and help apps."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*GetHelp*", "*Getstarted*", "*Microsoft.Tips*"]
+
+[[item]]
+id = "appx.maps"
+name = "Maps"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Maps app. The offline maps broker service is a separate item."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*WindowsMaps*"]
+
+[[item]]
+id = "appx.todo"
+name = "Microsoft To Do"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the To Do app."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*Microsoft.Todos*"]
+
+[[item]]
+id = "appx.bing"
+name = "Bing apps"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes Weather, News, Finance, Sports and Bing Search."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*BingWeather*", "*BingNews*", "*BingFinance*", "*BingSports*", "*BingSearch*"]
+
+[[item]]
+id = "appx.solitaire"
+name = "Solitaire Collection"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Solitaire game."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*MicrosoftSolitaireCollection*"]
+
+[[item]]
+id = "appx.alarms"
+name = "Clock"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Clock app (alarms, timers, focus sessions)."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*WindowsAlarms*"]
+
+[[item]]
+id = "appx.feedback-hub"
+name = "Feedback Hub"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Feedback Hub."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*WindowsFeedbackHub*"]
+
+[[item]]
+id = "appx.phone-link"
+name = "Phone Link"
+category = "appx"
+level = "high"
+risk = "low"
+summary = "Removes Phone Link (formerly Your Phone)."
+warning = "Phone notifications and calls mirrored from a paired phone stop working."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*YourPhone*", "*PhoneLink*", "*CrossDevice*"]
+
+[[item]]
+id = "appx.power-automate"
+name = "Power Automate"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Power Automate desktop package."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*PowerAutomateDesktop*"]
+
+[[item]]
+id = "appx.clipchamp"
+name = "Clipchamp"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Clipchamp video editor."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*Clipchamp*"]
+
+[[item]]
+id = "appx.family"
+name = "Microsoft Family"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Family Safety app."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*MicrosoftFamily*"]
+
+[[item]]
+id = "appx.teams"
+name = "Teams"
+category = "appx"
+level = "medium"
+risk = "medium"
+summary = "Removes the Teams package shipped with Windows."
+warning = "On Windows 11 23H2 and later this is the same package used for work accounts. Keep it if the machine uses Teams."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*MicrosoftTeams*", "*MSTeams*"]
+
+[[item]]
+id = "appx.quick-assist"
+name = "Quick Assist"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes Quick Assist remote help."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*QuickAssist*"]
+
+[[item]]
+id = "appx.mail-calendar"
+name = "Mail and Calendar"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the legacy Mail and Calendar apps."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*windowscommunicationsapps*"]
+
+[[item]]
+id = "appx.media"
+name = "Media Player and Movies"
+category = "appx"
+level = "medium"
+risk = "medium"
+summary = "Removes Media Player (Zune Music) and Movies and TV (Zune Video)."
+warning = "On Windows 11 the Zune Music package is the default Media Player app."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*ZuneMusic*", "*ZuneVideo*"]
+
+[[item]]
+id = "appx.mixed-reality"
+name = "Mixed Reality Portal"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Mixed Reality portal."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*MixedReality*"]
+
+[[item]]
+id = "appx.3d"
+name = "3D Viewer and Print 3D"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the 3D apps."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*3DViewer*", "*Print3D*", "*3DBuilder*"]
+
+[[item]]
+id = "appx.skype"
+name = "Skype"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Skype Store app."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*SkypeApp*"]
+
+[[item]]
+id = "appx.office-hub"
+name = "Office hub, OneNote, Wallet, People"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes the Office promotional hub, OneNote for Windows 10, Wallet, OneConnect and People."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*MicrosoftOfficeHub*", "*Microsoft.Office.OneNote*", "*Wallet*", "*OneConnect*", "*Microsoft.People*"]
+
+[[item]]
+id = "appx.copilot"
+name = "Copilot app"
+category = "appx"
+level = "high"
+risk = "low"
+summary = "Removes the Copilot app package. The policy that turns Copilot off is a separate item."
+warning = "Windows may reinstall the package through Store updates unless the Copilot policy is also applied."
+requires = ["telemetry.copilot-policy"]
+
+[[item.step]]
+kind = "appx"
+patterns = ["*Microsoft.Copilot*", "*Windows.Ai.Copilot.Provider*", "*Microsoft.Windows.Ai.Copilot*"]
+
+[[item]]
+id = "appx.outlook-new"
+name = "Outlook (new)"
+category = "appx"
+level = "high"
+risk = "medium"
+summary = "Removes the new Outlook app."
+warning = "Classic Outlook from Office is not affected. Mail accounts configured in the new Outlook are not migrated anywhere."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*OutlookForWindows*"]
+
+[[item]]
+id = "appx.dev-home"
+name = "Dev Home"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes Dev Home."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*Microsoft.Windows.DevHome*"]
+
+[[item]]
+id = "appx.journal-whiteboard"
+name = "Journal and Whiteboard"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes Microsoft Journal and Whiteboard."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*MicrosoftJournal*", "*Microsoft.Whiteboard*"]
+
+[[item]]
+id = "appx.promoted-third-party"
+name = "Promoted third-party apps"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Removes sponsored packages that consumer and OEM images preinstall (Spotify, TikTok, Disney, games). Absent on clean images."
+
+[[item.step]]
+kind = "appx"
+patterns = [
+    "*SpotifyAB*", "*CandyCrush*", "*king.com*", "*Disney*", "*Facebook*", "*Instagram*",
+    "*TikTok*", "*Netflix*", "*LinkedInforWindows*", "*AmazonVideo*", "*PrimeVideo*",
+    "*Duolingo*", "*Roblox*", "*BytedancePte*", "*Twitter*", "*Hulu*", "*Dolby*",
+    "*McAfee*", "*Booking*", "*ESPN*", "*Messenger*", "*WhatsApp*",
+]
+
+[[item]]
+id = "appx.store-policy"
+name = "Keep removed apps out of new profiles (24H2+)"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "Sets the Windows 11 24H2 policy that removes default Store packages when a new user profile is created."
+windows = { min_build = 26100 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages"
+name = "Enabled"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Clipchamp.Clipchamp_yxz26nhyzhsrt"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.BingNews_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.BingWeather_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.GetHelp_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.Todos_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\MicrosoftTeams_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\MSTeams_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item]]
+id = "appx.store-policy-high"
+name = "Keep Copilot, Outlook and Phone Link out of new profiles (24H2+)"
+category = "appx"
+level = "high"
+risk = "low"
+summary = "Extends the 24H2 default package policy to Copilot, the new Outlook and Phone Link."
+warning = "New user profiles on this machine will never get these apps until the policy is removed."
+requires = ["appx.store-policy"]
+windows = { min_build = 26100 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.Copilot_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.YourPhone_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1

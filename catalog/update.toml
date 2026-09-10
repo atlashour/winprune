@@ -1,0 +1,35 @@
+# Windows Update. Max level only: kiosks, signage, appliances that are patched by
+# reimaging. The Update Medic service is protected and usually refuses the change, so
+# the policy is the part that actually holds.
+
+[[item]]
+id = "update.no-auto-update"
+name = "No automatic updates (policy)"
+category = "update"
+level = "max"
+risk = "high"
+summary = "Sets the Automatic Updates policy to never check. Updates can still be installed by hand."
+warning = "The machine stops receiving security patches. Only for appliances that are patched by reimaging."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU"
+name = "NoAutoUpdate"
+type = "dword"
+value = 1
+
+[[item]]
+id = "update.services"
+name = "Windows Update services"
+category = "update"
+level = "max"
+risk = "high"
+summary = "Disables the Windows Update, Update Orchestrator and Update Medic services. The medic service is protected and is expected to be skipped."
+warning = "No updates at all, including Defender definitions through Windows Update. The Store also stops updating apps."
+requires = ["update.no-auto-update"]
+
+[[item.step]]
+kind = "service"
+names = ["wuauserv", "UsoSvc", "WaaSMedicSvc"]
+startup = "disabled"

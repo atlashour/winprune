@@ -1,0 +1,234 @@
+# Advertising, suggestions and activity tracking. HKCU entries apply to the account
+# that runs winprune (the elevated one).
+
+[[item]]
+id = "privacy.consumer-features"
+name = "Block sponsored app reinstalls"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Sets the CloudContent policies that stop Windows from silently installing promoted apps and showing tips. Without this, removed sponsored apps come back."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableWindowsConsumerFeatures"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableConsumerAccountStateContent"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableSoftLanding"
+type = "dword"
+value = 1
+
+[[item]]
+id = "privacy.advertising-id"
+name = "Advertising id"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Disables the per-user advertising id by policy and for the current user."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo"
+name = "DisabledByGroupPolicy"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo"
+name = "Enabled"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.start-suggestions"
+name = "Start and lock screen suggestions"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Turns off app suggestions in Start, lock screen tips and silent app installs for the current user."
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SystemPaneSuggestionsEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SilentInstalledAppsEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SoftLandingEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "RotatingLockScreenOverlayEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-338388Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-338389Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-353694Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-353696Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-310093Enabled"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.tailored-experiences"
+name = "Tailored experiences"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Stops Windows from using diagnostic data to personalise tips and ads."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableTailoredExperiencesWithDiagnosticData"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Privacy"
+name = "TailoredExperiencesWithDiagnosticDataEnabled"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.feedback-prompts"
+name = "Feedback prompts"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Stops the periodic feedback questions."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
+name = "DoNotShowFeedbackNotifications"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Microsoft\\Siuf\\Rules"
+name = "NumberOfSIUFInPeriod"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.activity-history"
+name = "Activity history"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Disables the activity feed and stops activity history from being collected or uploaded."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\System"
+name = "EnableActivityFeed"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\System"
+name = "PublishUserActivities"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\System"
+name = "UploadUserActivities"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.start-web-search"
+name = "Web results in Start search"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Keeps Start menu search local: no Bing suggestions or web results."
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Policies\\Microsoft\\Windows\\Explorer"
+name = "DisableSearchBoxSuggestions"
+type = "dword"
+value = 1

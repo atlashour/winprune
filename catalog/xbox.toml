@@ -1,0 +1,110 @@
+# Xbox and gaming stack.
+
+[[item]]
+id = "xbox.apps"
+name = "Xbox apps"
+category = "xbox"
+level = "high"
+risk = "low"
+summary = "Removes the Xbox app, Game Bar, identity provider and Gaming Services packages."
+warning = "Store games that depend on Gaming Services stop launching until the package is reinstalled."
+
+[[item.step]]
+kind = "appx"
+patterns = ["*Xbox*", "*GamingServices*", "*GamingApp*"]
+
+[[item]]
+id = "xbox.services"
+name = "Xbox services"
+category = "xbox"
+level = "high"
+risk = "low"
+summary = "Disables the Xbox Live auth, game save, accessory and networking services."
+warning = "Xbox Live sign-in and cloud game saves stop working."
+
+[[item.step]]
+kind = "service"
+names = ["GamingServices", "GamingServicesNet", "XblAuthManager", "XblGameSave", "XboxGipSvc", "XboxNetApiSvc"]
+startup = "disabled"
+
+[[item]]
+id = "xbox.tasks"
+name = "Xbox scheduled tasks"
+category = "xbox"
+level = "high"
+risk = "low"
+summary = "Disables the game save sync tasks."
+warning = "Cloud game saves stop syncing."
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = ["\\Microsoft\\XblGameSave\\*"]
+
+[[item]]
+id = "xbox.game-bar-policy"
+name = "Game DVR policy"
+category = "xbox"
+level = "high"
+risk = "low"
+summary = "Disables Game DVR background recording by policy."
+warning = "Game Bar recording and screenshots are turned off."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR"
+name = "AllowGameDVR"
+type = "dword"
+value = 0
+
+[[item]]
+id = "xbox.store-policy"
+name = "Keep Xbox apps out of new profiles (24H2+)"
+category = "xbox"
+level = "high"
+risk = "low"
+summary = "Extends the 24H2 default package policy to the Xbox packages."
+warning = "New user profiles will not get the Xbox apps until the policy is removed."
+requires = ["appx.store-policy"]
+windows = { min_build = 26100 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.GamingApp_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.XboxIdentityProvider_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.XboxSpeechToTextOverlay_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.Xbox.TCUI_8wekyb3d8bbwe"
+name = "RemovePackage"
+type = "dword"
+value = 1

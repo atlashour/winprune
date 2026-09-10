@@ -1,0 +1,66 @@
+# Services that are safe to switch off on any machine.
+
+[[item]]
+id = "services.bits-manual"
+name = "BITS on demand"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Sets Background Intelligent Transfer Service to manual start. Disabling it outright breaks installers and third-party updaters, so it stays available on demand."
+
+[[item.step]]
+kind = "service"
+names = ["BITS"]
+startup = "manual"
+
+[[item]]
+id = "services.maps-broker"
+name = "Offline maps broker"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Disables the downloaded maps manager."
+
+[[item.step]]
+kind = "service"
+names = ["MapsBroker"]
+startup = "disabled"
+
+[[item]]
+id = "services.retail-demo"
+name = "Retail demo"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Disables the in-store demo mode service."
+
+[[item.step]]
+kind = "service"
+names = ["RetailDemo"]
+startup = "disabled"
+
+[[item]]
+id = "services.fax"
+name = "Fax"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Disables the Fax service."
+
+[[item.step]]
+kind = "service"
+names = ["Fax"]
+startup = "disabled"
+
+[[item]]
+id = "services.media-sharing"
+name = "Media Player network sharing"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Disables the Windows Media Player network sharing service."
+
+[[item.step]]
+kind = "service"
+names = ["WMPNetworkSvc"]
+startup = "disabled"

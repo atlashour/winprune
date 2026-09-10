@@ -1,0 +1,141 @@
+# Diagnostic data, Cortana, Copilot and Recall.
+
+[[item]]
+id = "telemetry.services"
+name = "Diagnostic tracking services"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Disables the Connected User Experiences and Telemetry service and the WAP push router used for device management telemetry."
+
+[[item.step]]
+kind = "service"
+names = ["DiagTrack", "dmwappushservice"]
+startup = "disabled"
+
+[[item]]
+id = "telemetry.policy"
+name = "Diagnostic data policy"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Sets the diagnostic data level to Security (0). Home and Pro editions treat 0 as Required; Enterprise honours it."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
+name = "AllowTelemetry"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
+name = "AllowDeviceNameInTelemetry"
+type = "dword"
+value = 0
+
+[[item]]
+id = "telemetry.tasks"
+name = "Telemetry scheduled tasks"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Disables the Customer Experience Improvement Program, compatibility appraiser and related data collection tasks."
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = [
+    "\\Microsoft\\Windows\\Customer Experience Improvement Program\\*",
+    "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser",
+    "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater",
+    "\\Microsoft\\Windows\\Application Experience\\StartupAppTask",
+    "\\Microsoft\\Windows\\Autochk\\Proxy",
+    "\\Microsoft\\Windows\\DiskDiagnostic\\Microsoft-Windows-DiskDiagnosticDataCollector",
+    "\\Microsoft\\Windows\\Feedback\\Siuf\\DmClient*",
+    "\\Microsoft\\Windows\\Windows Error Reporting\\QueueReporting",
+]
+
+[[item]]
+id = "telemetry.cortana-policy"
+name = "Cortana policy"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Turns Cortana off by policy so search does not talk to it."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search"
+name = "AllowCortana"
+type = "dword"
+value = 0
+
+[[item]]
+id = "telemetry.copilot-policy"
+name = "Copilot policy"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Turns Windows Copilot off by policy for the machine and the current user."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot"
+name = "TurnOffWindowsCopilot"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+path = "Software\\Policies\\Microsoft\\Windows\\WindowsCopilot"
+name = "TurnOffWindowsCopilot"
+type = "dword"
+value = 1
+
+[[item]]
+id = "telemetry.recall-policy"
+name = "Recall policy"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Disables Recall snapshots and AI data analysis by policy. No-op on machines without Copilot+ hardware."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI"
+name = "DisableAIDataAnalysis"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI"
+name = "TurnOffSavingSnapshots"
+type = "dword"
+value = 1
+
+[[item]]
+id = "telemetry.error-reporting"
+name = "Windows Error Reporting"
+category = "telemetry"
+level = "high"
+risk = "low"
+summary = "Disables Windows Error Reporting uploads by policy."
+warning = "Crash reports stop being sent to Microsoft. Local crash dumps are unaffected."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Error Reporting"
+name = "Disabled"
+type = "dword"
+value = 1
