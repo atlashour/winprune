@@ -14,13 +14,17 @@ Every item in the catalog has a level. Pick one and uncheck whatever you want to
 
 | level  | meant for | adds |
 |--------|-----------|------|
-| medium | any machine | consumer apps, sponsored apps, telemetry, advertising id, suggestions, Copilot and Recall policies, a few idle services |
-| high   | machines without Microsoft cloud ties | OneDrive uninstall, Xbox, Copilot app, new Outlook, Phone Link, fresh telemetry device id |
-| max    | kiosks, signage, appliances | Windows Update, search indexer, Widgets, the OneDrive folder itself |
+| medium | any machine | consumer apps, sponsored apps, telemetry, advertising id, suggestions, typing and speech data, Copilot and Recall policies, a few idle services |
+| high   | machines without Microsoft cloud ties | OneDrive uninstall, Xbox app, Copilot app, new Outlook, Phone Link, Get Help, Sticky Notes, location, compatibility appraiser, fresh telemetry device id |
+| max    | kiosks, signage, appliances | Windows Update, search indexer, Widgets, Xbox identity provider, the OneDrive folder itself |
 
 Items that can cost you something carry a warning, and the plan fills it with what it
 finds on the machine (how many files sit in the OneDrive folder, for instance).
 High-risk items make you type `yes`.
+
+Where Microsoft honours a policy only on Enterprise and Education, the item says so.
+It is still written on Pro and Home; it just does nothing there, and the per-user
+switches that do work on those editions sit next to it.
 
 ## Use
 
@@ -39,8 +43,17 @@ winprune catalog list         every item with its level and risk
 tooling. Each apply writes a JSON report and a log under `%ProgramData%\winprune`
 (or `%LocalAppData%\winprune` when not elevated).
 
-Plan and dry-run never need administrator rights. Applying does; winprune asks
-through UAC and continues in a new window.
+Plan and dry-run never need administrator rights. Applying does: winprune writes the
+run into a folder under `%ProgramData%\winprune\runs`, asks through UAC, continues in
+a new window, and prints the outcome back in the window you started from.
+
+## Per-user settings
+
+Many switches live in the user's own registry hive. winprune writes them for the
+account that started it (even when the UAC prompt was answered with another
+administrator account), for every other profile that is loaded at the time, and for
+the Default profile, so accounts created later start clean. Profiles that are not
+loaded are left alone.
 
 ## What it does not do
 
@@ -49,9 +62,6 @@ policies and services can be reverted by hand from the report. Read the plan bef
 applying it.
 
 It does not touch Edge, Defender, the Store, drivers or anything performance related.
-
-Settings under `HKCU` apply to the account that runs winprune, which after the UAC
-prompt is the administrator account.
 
 ## Extending the catalog
 
@@ -67,7 +77,7 @@ An overlay can add items or patch existing ones by id:
 
 ```toml
 [[item]]
-id = "appx.media"
+id = "appx.media-player"
 enabled = false            # keep Media Player
 
 [[item]]
@@ -82,9 +92,10 @@ kind = "appx"
 patterns = ["*OldVendor*"]
 ```
 
-Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`. See the
-files under `catalog/` for the shape of each. `winprune catalog validate --catalog
-my.toml` checks an overlay.
+Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`. Registry
+and delete steps under a user profile take `scope = "user" | "all-users" |
+"default-profile"`. See the files under `catalog/` for the shape of each.
+`winprune catalog validate --catalog my.toml` checks an overlay.
 
 ## Build
 
