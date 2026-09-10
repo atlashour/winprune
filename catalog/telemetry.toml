@@ -1,16 +1,34 @@
-# Diagnostic data, Cortana, Copilot and Recall.
+# Diagnostic data, compatibility reporting, Cortana, Copilot, Recall and the AI features
+# bolted onto inbox apps. Policies that Microsoft documents as user-scoped are written
+# under HKCU for every profile on the machine, including the Default profile that seeds
+# new accounts.
 
 [[item]]
 id = "telemetry.services"
-name = "Diagnostic tracking services"
+name = "Diagnostic tracking service"
 category = "telemetry"
 level = "medium"
 risk = "low"
-summary = "Disables the Connected User Experiences and Telemetry service and the WAP push router used for device management telemetry."
+summary = "Disables the Connected User Experiences and Telemetry service (DiagTrack)."
+warning = "Feedback Hub, Xbox achievements and the Windows Insider page stop working. On Intune managed devices, Windows Update for Business reports and Endpoint analytics lose their data."
 
 [[item.step]]
 kind = "service"
-names = ["DiagTrack", "dmwappushservice"]
+names = ["DiagTrack"]
+startup = "disabled"
+
+[[item]]
+id = "telemetry.wap-push"
+name = "Device management push router"
+category = "telemetry"
+level = "high"
+risk = "medium"
+summary = "Disables the WAP push message router (dmwappushservice) used by the MDM client."
+warning = "Intune and other MDM enrolment stop syncing without any error, and Sysprep hangs. Keep it on managed or imaged machines."
+
+[[item.step]]
+kind = "service"
+names = ["dmwappushservice"]
 startup = "disabled"
 
 [[item]]
@@ -19,7 +37,7 @@ name = "Diagnostic data policy"
 category = "telemetry"
 level = "medium"
 risk = "low"
-summary = "Sets the diagnostic data level to Security (0). Home and Pro editions treat 0 as Required; Enterprise honours it."
+summary = "Sets diagnostic data to the lowest level the edition allows (Security on Enterprise and Education, Required elsewhere), keeps the device name out of it and limits log and dump uploads."
 
 [[item.step]]
 kind = "registry"
@@ -32,10 +50,51 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\DataCollection"
+name = "AllowTelemetry"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
 path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
 name = "AllowDeviceNameInTelemetry"
 type = "dword"
 value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
+name = "LimitDiagnosticLogCollection"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
+name = "LimitDumpCollection"
+type = "dword"
+value = 1
+
+[[item]]
+id = "telemetry.onesettings"
+name = "OneSettings downloads"
+category = "telemetry"
+level = "high"
+risk = "low"
+summary = "Stops the device from fetching configuration from the OneSettings service."
+warning = "Microsoft uses OneSettings to switch off broken diagnostic events remotely. Without it that safety valve is gone."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection"
+name = "DisableOneSettingsDownloads"
+type = "dword"
+value = 1
 
 [[item]]
 id = "telemetry.tasks"
@@ -43,20 +102,56 @@ name = "Telemetry scheduled tasks"
 category = "telemetry"
 level = "medium"
 risk = "low"
-summary = "Disables the Customer Experience Improvement Program, compatibility appraiser and related data collection tasks."
+summary = "Disables the Customer Experience Improvement Program, feedback, disk diagnostic upload and app inventory backup tasks."
 
 [[item.step]]
 kind = "task"
 action = "disable"
 patterns = [
     "\\Microsoft\\Windows\\Customer Experience Improvement Program\\*",
-    "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser",
     "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater",
     "\\Microsoft\\Windows\\Application Experience\\StartupAppTask",
+    "\\Microsoft\\Windows\\Application Experience\\MareBackup",
     "\\Microsoft\\Windows\\Autochk\\Proxy",
     "\\Microsoft\\Windows\\DiskDiagnostic\\Microsoft-Windows-DiskDiagnosticDataCollector",
     "\\Microsoft\\Windows\\Feedback\\Siuf\\DmClient*",
-    "\\Microsoft\\Windows\\Windows Error Reporting\\QueueReporting",
+]
+
+[[item]]
+id = "telemetry.appraiser"
+name = "Compatibility appraiser and device census"
+category = "telemetry"
+level = "high"
+risk = "medium"
+summary = "Disables the compatibility appraiser (CompatTelRunner) and the device census tasks that inventory hardware and apps for Microsoft."
+warning = "Windows Update uses the appraiser results to offer feature updates and apply safeguard holds. With these off the next Windows version may never be offered through Windows Update."
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = [
+    "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser",
+    "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser Exp",
+    "\\Microsoft\\Windows\\Device Information\\Device",
+    "\\Microsoft\\Windows\\Device Information\\Device User",
+]
+
+[[item]]
+id = "telemetry.flighting-usage"
+name = "Feature usage reporting"
+category = "telemetry"
+level = "high"
+risk = "low"
+summary = "Disables the usage reporting tasks of the controlled feature rollout system. The rollout tasks themselves stay on so kill switches for broken features still arrive."
+warning = "Nothing visible changes. Listed at high because these tasks are part of the update plumbing."
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = [
+    "\\Microsoft\\Windows\\Flighting\\FeatureConfig\\UsageDataReporting",
+    "\\Microsoft\\Windows\\Flighting\\FeatureConfig\\UsageDataFlushing",
+    "\\Microsoft\\Windows\\Flighting\\FeatureConfig\\BootstrapUsageDataReporting",
 ]
 
 [[item]]
@@ -65,7 +160,7 @@ name = "Cortana policy"
 category = "telemetry"
 level = "medium"
 risk = "low"
-summary = "Turns Cortana off by policy so search does not talk to it."
+summary = "Turns Cortana off by policy so search does not talk to it. A no-op on 24H2 where Cortana is gone."
 
 [[item.step]]
 kind = "registry"
@@ -77,16 +172,17 @@ value = 0
 
 [[item]]
 id = "telemetry.copilot-policy"
-name = "Copilot policy"
+name = "Copilot policy and taskbar button"
 category = "telemetry"
 level = "medium"
 risk = "low"
-summary = "Turns Windows Copilot off by policy for the machine and the current user."
+summary = "Applies the user-scoped Turn off Windows Copilot policy and hides the 23H2 taskbar button. Microsoft has deprecated the policy and it does not touch the Copilot app on 24H2, which the Copilot app item removes."
 
 [[item.step]]
 kind = "registry"
-hive = "hklm"
-path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\WindowsCopilot"
 name = "TurnOffWindowsCopilot"
 type = "dword"
 value = 1
@@ -94,18 +190,20 @@ value = 1
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
-path = "Software\\Policies\\Microsoft\\Windows\\WindowsCopilot"
-name = "TurnOffWindowsCopilot"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "ShowCopilotButton"
 type = "dword"
-value = 1
+value = 0
 
 [[item]]
 id = "telemetry.recall-policy"
-name = "Recall policy"
+name = "Recall and Click to Do"
 category = "telemetry"
 level = "medium"
 risk = "low"
-summary = "Disables Recall snapshots and AI data analysis by policy. No-op on machines without Copilot+ hardware."
+summary = "Disables Recall snapshots, removes the Recall feature bits, disables Click to Do and sets the AI fabric service to manual. A no-op on machines without Copilot+ hardware."
+windows = { min_build = 26100 }
 
 [[item.step]]
 kind = "registry"
@@ -117,9 +215,81 @@ value = 1
 
 [[item.step]]
 kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\WindowsAI"
+name = "DisableAIDataAnalysis"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
 hive = "hklm"
 path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI"
-name = "TurnOffSavingSnapshots"
+name = "AllowRecallEnablement"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI"
+name = "DisableClickToDo"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\WindowsAI"
+name = "DisableClickToDo"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "service"
+names = ["WSAIFabricSvc"]
+startup = "manual"
+
+[[item]]
+id = "telemetry.app-ai"
+name = "AI features in Notepad and Paint"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Turns off Copilot in Notepad and the generative features in Paint by policy."
+windows = { min_build = 22000 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\WindowsNotepad"
+name = "DisableAIFeatures"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Paint"
+name = "DisableCocreator"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Paint"
+name = "DisableGenerativeFill"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Paint"
+name = "DisableImageCreator"
 type = "dword"
 value = 1
 
@@ -129,8 +299,8 @@ name = "Windows Error Reporting"
 category = "telemetry"
 level = "high"
 risk = "low"
-summary = "Disables Windows Error Reporting uploads by policy."
-warning = "Crash reports stop being sent to Microsoft. Local crash dumps are unaffected."
+summary = "Disables Windows Error Reporting uploads by policy and the task that drains the report queue at sign-in. The service stays; local crash dumps and Reliability Monitor keep working."
+warning = "Crash reports stop being sent to Microsoft, and the dialog that offers an online solution goes away."
 
 [[item.step]]
 kind = "registry"
@@ -139,3 +309,110 @@ path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Error Reporting"
 name = "Disabled"
 type = "dword"
 value = 1
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = ["\\Microsoft\\Windows\\Windows Error Reporting\\QueueReporting"]
+
+[[item]]
+id = "telemetry.input"
+name = "Typing, inking and speech data"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Stops Windows from sending typing and handwriting samples, contact harvesting for personalisation, and online speech recognition data."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\TextInput"
+name = "AllowLinguisticDataCollection"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\InputPersonalization"
+name = "AllowInputPersonalization"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\InputPersonalization"
+name = "RestrictImplicitTextCollection"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\InputPersonalization"
+name = "RestrictImplicitInkCollection"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\TabletPC"
+name = "PreventHandwritingDataSharing"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Input\\TIPC"
+name = "Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\InputPersonalization"
+name = "RestrictImplicitTextCollection"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\InputPersonalization"
+name = "RestrictImplicitInkCollection"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\InputPersonalization\\TrainedDataStore"
+name = "HarvestContacts"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Personalization\\Settings"
+name = "AcceptedPrivacyPolicy"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Speech_OneCore\\Settings\\OnlineSpeechPrivacy"
+name = "HasAccepted"
+type = "dword"
+value = 0

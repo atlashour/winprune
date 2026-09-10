@@ -7,8 +7,8 @@ name = "Regenerate the telemetry device id"
 category = "identity"
 level = "high"
 risk = "medium"
-summary = "Deletes the SQM client machine id, the value shown as Device ID under Settings, About. Windows creates a fresh one on the next boot, which is what Sysprep does during generalize."
-warning = "Support tooling, Insider enrolment and Microsoft diagnostics that reference the old Device ID will see a new machine. Not documented by Microsoft as a user action."
+summary = "Deletes the SQM client machine id, the value shown as Device ID under Settings, About. Windows creates a fresh one, which is what Sysprep does during generalize."
+warning = "Support tooling, Insider enrolment and Microsoft diagnostics that reference the old Device ID will see a new machine. The diagnostics service writes the new id, so with that service disabled it appears when Windows next runs its device census. Not documented by Microsoft as a user action."
 
 [[item.step]]
 kind = "registry"
@@ -23,13 +23,14 @@ name = "Reset the advertising id"
 category = "identity"
 level = "high"
 risk = "low"
-summary = "Deletes the current user's advertising id. Combined with the advertising id policy, no new one is generated."
+summary = "Deletes the advertising id of every user profile. Combined with the advertising id policy, no new one is generated."
 warning = "Apps that used the advertising id for personalisation start from a blank profile."
 requires = ["privacy.advertising-id"]
 
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo"
 name = "Id"
 delete = true

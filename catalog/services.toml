@@ -1,4 +1,6 @@
-# Services that are safe to switch off on any machine.
+# Services that are safe to switch off on any machine. Anything that management,
+# updates or sign-in depend on lives in the telemetry, xbox or update files with a
+# warning instead.
 
 [[item]]
 id = "services.bits-manual"
@@ -6,7 +8,7 @@ name = "BITS on demand"
 category = "services"
 level = "medium"
 risk = "low"
-summary = "Sets Background Intelligent Transfer Service to manual start. Disabling it outright breaks installers and third-party updaters, so it stays available on demand."
+summary = "Sets Background Intelligent Transfer Service to manual start. Disabling it outright breaks Windows Update and installers, so it stays available on demand."
 
 [[item.step]]
 kind = "service"
@@ -15,16 +17,21 @@ startup = "manual"
 
 [[item]]
 id = "services.maps-broker"
-name = "Offline maps broker"
+name = "Offline maps"
 category = "services"
 level = "medium"
 risk = "low"
-summary = "Disables the downloaded maps manager."
+summary = "Disables the downloaded maps manager and the map update and toast tasks. Only the Maps app used them."
 
 [[item.step]]
 kind = "service"
 names = ["MapsBroker"]
 startup = "disabled"
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = ["\\Microsoft\\Windows\\Maps\\MapsToastTask", "\\Microsoft\\Windows\\Maps\\MapsUpdateTask"]
 
 [[item]]
 id = "services.retail-demo"
@@ -45,7 +52,7 @@ name = "Fax"
 category = "services"
 level = "medium"
 risk = "low"
-summary = "Disables the Fax service."
+summary = "Disables the Fax service. Absent when the Fax feature was never installed."
 
 [[item.step]]
 kind = "service"
@@ -63,4 +70,30 @@ summary = "Disables the Windows Media Player network sharing service."
 [[item.step]]
 kind = "service"
 names = ["WMPNetworkSvc"]
+startup = "disabled"
+
+[[item]]
+id = "services.insider"
+name = "Windows Insider service"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Disables the Windows Insider Program service. Only the Insider page in Settings stops working."
+
+[[item.step]]
+kind = "service"
+names = ["wisvc"]
+startup = "disabled"
+
+[[item]]
+id = "services.remote-registry"
+name = "Remote Registry"
+category = "services"
+level = "medium"
+risk = "low"
+summary = "Keeps the Remote Registry service disabled. It already is on client editions; this makes sure it stays that way."
+
+[[item.step]]
+kind = "service"
+names = ["RemoteRegistry"]
 startup = "disabled"

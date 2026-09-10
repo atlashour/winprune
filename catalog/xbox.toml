@@ -1,17 +1,37 @@
-# Xbox and gaming stack.
+# Xbox and gaming stack. The identity provider, TCUI and speech overlay are used by
+# Store games and by Microsoft account sign-in in non-Xbox apps, so they sit at max.
 
 [[item]]
 id = "xbox.apps"
-name = "Xbox apps"
+name = "Xbox app and Game Bar"
 category = "xbox"
 level = "high"
 risk = "low"
-summary = "Removes the Xbox app, Game Bar, identity provider and Gaming Services packages."
-warning = "Store games that depend on Gaming Services stop launching until the package is reinstalled."
+summary = "Removes the Xbox app, Game Bar and the old Xbox Console Companion."
+warning = "Game Pass and Store games are installed through the Xbox app; without it they have to come from elsewhere."
 
 [[item.step]]
 kind = "appx"
-patterns = ["*Xbox*", "*GamingServices*", "*GamingApp*"]
+patterns = ["*Microsoft.GamingApp*", "*XboxGamingOverlay*", "*XboxGameOverlay*", "*Microsoft.XboxApp*"]
+
+[[item]]
+id = "xbox.core"
+name = "Xbox identity, TCUI, speech overlay and Gaming Services"
+category = "xbox"
+level = "max"
+risk = "high"
+summary = "Removes the Xbox identity provider, the Xbox TCUI, the speech to text overlay and Gaming Services, and disables the Gaming Services services."
+warning = "Store games stop launching and Microsoft account sign-in breaks in some non-Xbox apps. The speech overlay cannot be reinstalled easily. Only for machines that will never run Store games."
+requires = ["xbox.apps"]
+
+[[item.step]]
+kind = "appx"
+patterns = ["*XboxIdentityProvider*", "*Xbox.TCUI*", "*XboxSpeechToTextOverlay*", "*GamingServices*"]
+
+[[item.step]]
+kind = "service"
+names = ["GamingServices", "GamingServicesNet"]
+startup = "disabled"
 
 [[item]]
 id = "xbox.services"
@@ -20,11 +40,11 @@ category = "xbox"
 level = "high"
 risk = "low"
 summary = "Disables the Xbox Live auth, game save, accessory and networking services."
-warning = "Xbox Live sign-in and cloud game saves stop working."
+warning = "Xbox Live sign-in, cloud game saves and the management of Xbox accessories (firmware, Xbox Accessories app) stop working."
 
 [[item.step]]
 kind = "service"
-names = ["GamingServices", "GamingServicesNet", "XblAuthManager", "XblGameSave", "XboxGipSvc", "XboxNetApiSvc"]
+names = ["XblAuthManager", "XblGameSave", "XboxGipSvc", "XboxNetApiSvc"]
 startup = "disabled"
 
 [[item]]
@@ -43,11 +63,11 @@ patterns = ["\\Microsoft\\XblGameSave\\*"]
 
 [[item]]
 id = "xbox.game-bar-policy"
-name = "Game DVR policy"
+name = "Game DVR"
 category = "xbox"
 level = "high"
 risk = "low"
-summary = "Disables Game DVR background recording by policy."
+summary = "Disables Game DVR background recording by policy and turns the per-user capture switches off."
 warning = "Game Bar recording and screenshots are turned off."
 
 [[item.step]]
@@ -58,14 +78,32 @@ name = "AllowGameDVR"
 type = "dword"
 value = 0
 
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR"
+name = "AppCaptureEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "System\\GameConfigStore"
+name = "GameDVR_Enabled"
+type = "dword"
+value = 0
+
 [[item]]
 id = "xbox.store-policy"
-name = "Keep Xbox apps out of new profiles (24H2+)"
+name = "Store package policy: Xbox app (24H2+, Enterprise and Education)"
 category = "xbox"
 level = "high"
 risk = "low"
-summary = "Extends the 24H2 default package policy to the Xbox packages."
-warning = "New user profiles will not get the Xbox apps until the policy is removed."
+summary = "Extends the 24H2 store package policy to the Xbox app. Enterprise and Education only."
+warning = "New user profiles will not get the Xbox app until the policy is removed."
 requires = ["appx.store-policy"]
 windows = { min_build = 26100 }
 
@@ -77,13 +115,16 @@ name = "RemovePackage"
 type = "dword"
 value = 1
 
-[[item.step]]
-kind = "registry"
-hive = "hklm"
-path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Appx\\RemoveDefaultMicrosoftStorePackages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe"
-name = "RemovePackage"
-type = "dword"
-value = 1
+[[item]]
+id = "xbox.core-store-policy"
+name = "Store package policy: Xbox identity, TCUI, speech overlay"
+category = "xbox"
+level = "max"
+risk = "low"
+summary = "Extends the 24H2 store package policy to the Xbox core packages. Enterprise and Education only."
+warning = "New user profiles will not get these packages until the policy is removed."
+requires = ["appx.store-policy", "xbox.core"]
+windows = { min_build = 26100 }
 
 [[item.step]]
 kind = "registry"

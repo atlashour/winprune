@@ -1,13 +1,16 @@
-# Advertising, suggestions and activity tracking. HKCU entries apply to the account
-# that runs winprune (the elevated one).
+# Advertising, suggestions, activity tracking and web search. Machine policies go under
+# HKLM; the per-user toggles are written for every profile on the machine, including the
+# Default profile, so new accounts start clean. Several CloudContent policies are only
+# honoured on Enterprise and Education; the per-user values are what works on Pro and
+# Home, and both are written.
 
 [[item]]
 id = "privacy.consumer-features"
-name = "Block sponsored app reinstalls"
+name = "Sponsored apps and tips policy"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Sets the CloudContent policies that stop Windows from silently installing promoted apps and showing tips. Without this, removed sponsored apps come back."
+summary = "Sets the CloudContent policies against promoted app installs, tips and account-state content. Enterprise and Education honour them; on Pro and Home the per-user suggestion switches below do the work."
 
 [[item.step]]
 kind = "registry"
@@ -33,13 +36,37 @@ name = "DisableSoftLanding"
 type = "dword"
 value = 1
 
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableCloudOptimizedContent"
+type = "dword"
+value = 1
+
+[[item]]
+id = "privacy.device-metadata"
+name = "Device metadata downloads"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Stops Windows from fetching device metadata and OEM companion apps from the internet when hardware is plugged in."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Device Metadata"
+name = "PreventDeviceMetadataFromNetwork"
+type = "dword"
+value = 1
+
 [[item]]
 id = "privacy.advertising-id"
 name = "Advertising id"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Disables the per-user advertising id by policy and for the current user."
+summary = "Disables the advertising id by policy, machine-wide and for every user profile."
 
 [[item.step]]
 kind = "registry"
@@ -51,7 +78,16 @@ value = 1
 
 [[item.step]]
 kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo"
+name = "Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo"
 name = "Enabled"
 type = "dword"
@@ -59,15 +95,16 @@ value = 0
 
 [[item]]
 id = "privacy.start-suggestions"
-name = "Start and lock screen suggestions"
+name = "Suggestions in Start, Settings, lock screen and Explorer"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Turns off app suggestions in Start, lock screen tips and silent app installs for the current user."
+summary = "Turns off app suggestions and recommendations in Start, suggested content in Settings, lock screen tips, silent app installs, OneDrive ads in Explorer, account notifications and the post-update setup nag, for every user profile."
 
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SystemPaneSuggestionsEnabled"
 type = "dword"
@@ -76,6 +113,7 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SilentInstalledAppsEnabled"
 type = "dword"
@@ -84,6 +122,34 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "PreInstalledAppsEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "OemPreInstalledAppsEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "PreInstalledAppsEverEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SoftLandingEnabled"
 type = "dword"
@@ -92,6 +158,7 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "RotatingLockScreenOverlayEnabled"
 type = "dword"
@@ -100,6 +167,16 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-338387Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SubscribedContent-338388Enabled"
 type = "dword"
@@ -108,6 +185,7 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SubscribedContent-338389Enabled"
 type = "dword"
@@ -116,6 +194,16 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-338393Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SubscribedContent-353694Enabled"
 type = "dword"
@@ -124,6 +212,7 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SubscribedContent-353696Enabled"
 type = "dword"
@@ -132,10 +221,73 @@ value = 0
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
 name = "SubscribedContent-310093Enabled"
 type = "dword"
 value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager"
+name = "SubscribedContent-88000105Enabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "Start_IrisRecommendations"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "Start_TrackProgs"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "Start_AccountNotifications"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "ShowSyncProviderNotifications"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement"
+name = "ScoobeSystemSettingEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer"
+name = "HideRecommendedPersonalizedSites"
+type = "dword"
+value = 1
 
 [[item]]
 id = "privacy.tailored-experiences"
@@ -143,12 +295,13 @@ name = "Tailored experiences"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Stops Windows from using diagnostic data to personalise tips and ads."
+summary = "Stops Windows from using diagnostic data to personalise tips and ads, and blocks third-party suggestions in Spotlight. Both policies are user-scoped and are written for every profile."
 
 [[item.step]]
 kind = "registry"
-hive = "hklm"
-path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\CloudContent"
 name = "DisableTailoredExperiencesWithDiagnosticData"
 type = "dword"
 value = 1
@@ -156,10 +309,38 @@ value = 1
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableThirdPartySuggestions"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\Privacy"
 name = "TailoredExperiencesWithDiagnosticDataEnabled"
 type = "dword"
 value = 0
+
+[[item]]
+id = "privacy.spotlight"
+name = "Windows Spotlight"
+category = "privacy"
+level = "high"
+risk = "low"
+summary = "Turns off Windows Spotlight on the lock screen, its tips and its welcome experience by user policy. Enterprise and Education only; Pro and Home ignore it."
+warning = "The lock screen falls back to a static picture. On Pro and Home nothing changes."
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableWindowsSpotlightFeatures"
+type = "dword"
+value = 1
 
 [[item]]
 id = "privacy.feedback-prompts"
@@ -167,7 +348,7 @@ name = "Feedback prompts"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Stops the periodic feedback questions."
+summary = "Stops the periodic feedback questions by policy and sets the feedback frequency to never for every profile."
 
 [[item.step]]
 kind = "registry"
@@ -180,8 +361,18 @@ value = 1
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Siuf\\Rules"
 name = "NumberOfSIUFInPeriod"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Siuf\\Rules"
+name = "PeriodInNanoSeconds"
 type = "dword"
 value = 0
 
@@ -219,16 +410,151 @@ value = 0
 
 [[item]]
 id = "privacy.start-web-search"
-name = "Web results in Start search"
+name = "Web results and highlights in search"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Keeps Start menu search local: no Bing suggestions or web results."
+summary = "Keeps Start menu search local: no Bing suggestions, no web results, no search highlights, and no location use by search."
 
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Policies\\Microsoft\\Windows\\Explorer"
 name = "DisableSearchBoxSuggestions"
 type = "dword"
 value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer"
+name = "DisableSearchBoxSuggestions"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search"
+name = "DisableWebSearch"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search"
+name = "ConnectedSearchUseWeb"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search"
+name = "EnableDynamicContentInWSB"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search"
+name = "AllowSearchToUseLocation"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\SearchSettings"
+name = "IsDynamicSearchBoxEnabled"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.bing-search-win10"
+name = "Bing in Windows 10 search"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Turns off Bing and Cortana consent in the Windows 10 search box. Ignored since Windows 10 2004, where the search box policy above takes over."
+windows = { max_build = 19040 }
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Search"
+name = "BingSearchEnabled"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Search"
+name = "CortanaConsent"
+type = "dword"
+value = 0
+
+[[item]]
+id = "privacy.language-list"
+name = "Website language list"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Stops websites from receiving the Windows language list."
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Control Panel\\International\\User Profile"
+name = "HttpAcceptLanguageOptOut"
+type = "dword"
+value = 1
+
+[[item]]
+id = "privacy.lock-screen-camera"
+name = "Lock screen camera"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "Prevents the camera from being enabled on the lock screen."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Personalization"
+name = "NoLockScreenCamera"
+type = "dword"
+value = 1
+
+[[item]]
+id = "privacy.location"
+name = "Location"
+category = "privacy"
+level = "high"
+risk = "medium"
+summary = "Turns location off by policy for the system and for apps."
+warning = "Find My Device, automatic time zone, Maps and every app that asks for location stop working."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors"
+name = "DisableLocation"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy"
+name = "LetAppsAccessLocation"
+type = "dword"
+value = 2

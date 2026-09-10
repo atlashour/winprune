@@ -1,5 +1,7 @@
 # Uninstalling OneDrive never touches the user's OneDrive folder. Deleting that folder
-# is a separate max-level item whose warning carries the live file count.
+# is a separate max-level item whose warning carries the live file count. Per-user
+# leftovers are cleaned for every profile, and the Default profile loses the setup hook
+# that installs OneDrive for each new account.
 
 [[item]]
 id = "onedrive.uninstall"
@@ -7,7 +9,7 @@ name = "Uninstall OneDrive"
 category = "onedrive"
 level = "high"
 risk = "medium"
-summary = "Stops OneDrive, runs the official uninstaller, removes leftovers in AppData and ProgramData, the autostart entry, the Explorer sidebar entry and the update tasks, then blocks it by policy."
+summary = "Stops OneDrive, runs the official uninstaller, removes leftovers in every profile and in ProgramData, the autostart and first-sign-in setup entries, the Explorer sidebar entry and the update tasks, then blocks it by policy."
 warning = "Sync stops. Files already downloaded stay in the OneDrive folder; files marked online-only become unavailable until OneDrive is reinstalled."
 
 [[item.step]]
@@ -21,19 +23,40 @@ args = ["/uninstall"]
 
 [[item.step]]
 kind = "delete"
+scope = "all-users"
 paths = [
     "%LOCALAPPDATA%\\Microsoft\\OneDrive",
-    "%PROGRAMDATA%\\Microsoft OneDrive",
-    "C:\\OneDriveTemp",
     "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\OneDrive.lnk",
 ]
 
 [[item.step]]
+kind = "delete"
+paths = ["%PROGRAMDATA%\\Microsoft OneDrive", "C:\\OneDriveTemp"]
+
+[[item.step]]
 kind = "registry"
 hive = "hkcu"
+scope = "all-users"
 path = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 name = "OneDrive"
 delete = true
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+name = "OneDriveSetup"
+delete = true
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Classes\\CLSID\\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
+name = "System.IsPinnedToNameSpaceTree"
+type = "dword"
+value = 0
 
 [[item.step]]
 kind = "registry"
@@ -70,7 +93,7 @@ name = "Delete the OneDrive folder"
 category = "onedrive"
 level = "max"
 risk = "high"
-summary = "Deletes the OneDrive folder in the user profile. For kiosks that never had data there."
+summary = "Deletes the OneDrive folder of the user who started winprune. For kiosks that never had data there."
 warning = "Everything in the OneDrive folder is deleted from this machine. Files not fully synced to the cloud are lost."
 requires = ["onedrive.uninstall"]
 

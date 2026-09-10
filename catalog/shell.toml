@@ -1,17 +1,19 @@
-# Shell pieces that change how the desktop looks or behaves. Max level only.
+# Shell pieces that change how the desktop looks or behaves. Items gated by build so
+# the Windows 10 taskbar feed and the Windows 11 Widgets do not get mixed up.
 
 [[item]]
 id = "shell.widgets"
-name = "Widgets and news feed"
+name = "Widgets"
 category = "shell"
 level = "max"
 risk = "medium"
-summary = "Removes the Web Experience package behind Widgets and disables the news and interests feed by policy."
-warning = "The Widgets button disappears from the taskbar. On Windows 10 the news and interests taskbar feed goes away."
+summary = "Removes the Web Experience package, the widgets runtime and the Start Experiences feed app behind Widgets, disables Widgets by policy and hides the taskbar button for every profile."
+warning = "The Widgets button and board disappear. Windows 11 only."
+windows = { min_build = 22000 }
 
 [[item.step]]
 kind = "appx"
-patterns = ["*WebExperience*"]
+patterns = ["*WebExperience*", "*WidgetsPlatformRuntime*", "*StartExperiencesApp*"]
 
 [[item.step]]
 kind = "registry"
@@ -21,14 +23,112 @@ name = "AllowNewsAndInterests"
 type = "dword"
 value = 0
 
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "TaskbarDa"
+type = "dword"
+value = 0
+
+[[item]]
+id = "shell.news-and-interests"
+name = "News and interests"
+category = "shell"
+level = "max"
+risk = "low"
+summary = "Turns off the Windows 10 news and interests taskbar feed by policy. Pro, Enterprise and Education; Home ignores the policy."
+warning = "The taskbar weather and news feed goes away. Windows 10 only."
+windows = { max_build = 21999 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Feeds"
+name = "EnableFeeds"
+type = "dword"
+value = 0
+
+[[item]]
+id = "shell.meet-now"
+name = "Meet Now"
+category = "shell"
+level = "medium"
+risk = "low"
+summary = "Hides the Meet Now icon from the Windows 10 taskbar."
+windows = { min_build = 19041, max_build = 21999 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"
+name = "HideSCAMeetNow"
+type = "dword"
+value = 1
+
+[[item]]
+id = "shell.people-band"
+name = "People bar"
+category = "shell"
+level = "medium"
+risk = "low"
+summary = "Hides the People button on the Windows 10 taskbar for every profile."
+windows = { max_build = 21999 }
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\People"
+name = "PeopleBand"
+type = "dword"
+value = 0
+
+[[item]]
+id = "shell.cortana-button"
+name = "Cortana button"
+category = "shell"
+level = "medium"
+risk = "low"
+summary = "Hides the Cortana button on the Windows 10 taskbar for every profile."
+windows = { max_build = 21999 }
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+name = "ShowCortanaButton"
+type = "dword"
+value = 0
+
+[[item]]
+id = "shell.recommended-section"
+name = "Recommended section in Start"
+category = "shell"
+level = "max"
+risk = "low"
+summary = "Hides the Recommended section of the Windows 11 Start menu by policy. Only Enterprise, Education and SE editions honour it."
+warning = "On Pro and Home nothing changes; Microsoft does not support the policy there."
+windows = { min_build = 22621 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer"
+name = "HideRecommendedSection"
+type = "dword"
+value = 1
+
 [[item]]
 id = "shell.search-indexer"
 name = "Search indexer"
 category = "shell"
 level = "max"
 risk = "high"
-summary = "Disables the Windows Search service. Start menu and Explorer search stop working."
-warning = "Start menu search, Explorer search and Outlook search break. Only for kiosks without a shell."
+summary = "Disables the Windows Search service."
+warning = "Start menu search, Explorer search, Settings search and Outlook search break. Only for kiosks without a shell."
 
 [[item.step]]
 kind = "service"

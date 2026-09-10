@@ -1,6 +1,24 @@
 # Windows Update. Max level only: kiosks, signage, appliances that are patched by
-# reimaging. The Update Medic service is protected and usually refuses the change, so
-# the policy is the part that actually holds.
+# reimaging. The Update Medic service refuses configuration changes even from an
+# administrator, so its start type is written straight to the registry and Windows
+# restores it with the next cumulative update; the policy is the part that holds.
+
+[[item]]
+id = "update.delivery-optimization"
+name = "Delivery Optimization peering"
+category = "update"
+level = "high"
+risk = "low"
+summary = "Sets Delivery Optimization to plain HTTP downloads: no peer-to-peer upload or download of updates on the LAN or the internet."
+warning = "Update downloads in the LAN can no longer share bandwidth between machines."
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization"
+name = "DODownloadMode"
+type = "dword"
+value = 0
 
 [[item]]
 id = "update.no-auto-update"
@@ -8,7 +26,7 @@ name = "No automatic updates (policy)"
 category = "update"
 level = "max"
 risk = "high"
-summary = "Sets the Automatic Updates policy to never check. Updates can still be installed by hand."
+summary = "Sets the Automatic Updates policy to never check. Updates can still be installed by hand as long as the update services item is not applied."
 warning = "The machine stops receiving security patches. Only for appliances that are patched by reimaging."
 
 [[item.step]]
@@ -25,8 +43,8 @@ name = "Windows Update services"
 category = "update"
 level = "max"
 risk = "high"
-summary = "Disables the Windows Update, Update Orchestrator and Update Medic services. The medic service is protected and is expected to be skipped."
-warning = "No updates at all, including Defender definitions through Windows Update. The Store also stops updating apps."
+summary = "Disables the Windows Update, Update Orchestrator and Update Medic services. The medic service rejects the change, so its start type goes to the registry and comes back with the next cumulative update."
+warning = "No updates at all, not even by hand, including Defender definitions through Windows Update. The Store also stops updating apps."
 requires = ["update.no-auto-update"]
 
 [[item.step]]
