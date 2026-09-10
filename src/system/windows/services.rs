@@ -14,7 +14,8 @@ use winreg::RegKey;
 use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_SET_VALUE};
 
 // Where the SCM keeps start types. Only used as a fallback for services that reject
-// ChangeServiceConfig even when elevated (DiagTrack, WaaSMedicSvc and friends).
+// ChangeServiceConfig even when elevated (the Update Medic service). The write only
+// holds until the next cumulative update restores it.
 const SERVICES_KEY: &str = "SYSTEM\\CurrentControlSet\\Services";
 
 struct Handle(SC_HANDLE);
