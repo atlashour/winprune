@@ -74,6 +74,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             " space toggle  a/n all/none  1/2/3 level  h/l fold  / filter  d dry run  tab details  enter continue  q quit"
                 .to_string()
         }
+        Screen::Confirm if app.high_risk_selected() => " type yes then enter  esc back".to_string(),
         Screen::Confirm => " enter apply  esc back".to_string(),
         Screen::Progress => " applying, please wait".to_string(),
         Screen::Result => " q quit".to_string(),
@@ -308,28 +309,46 @@ fn draw_confirm(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::raw(""));
     }
     if high_risk {
-        lines.push(Line::from(vec![
-            Span::styled(
-                "High-risk items selected. Type yes and press Enter: ",
-                Style::new().fg(DANGER),
-            ),
-            Span::styled(format!("{}_", app.confirm_input), Style::new().bold()),
-        ]));
+        lines.push(Line::from(Span::styled(
+            "High-risk items selected. Type yes in the box and press Enter.",
+            Style::new().fg(DANGER).bold(),
+        )));
     } else {
         lines.push(Line::from(Span::raw(
             "Press Enter to apply, Esc to go back.",
+        )));
+    }
+    if let Some(notice) = &app.notice {
+        lines.push(Line::from(Span::styled(
+            notice.clone(),
+            Style::new().fg(Color::Black).bg(WARN),
         )));
     }
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Confirm ")
         .border_style(Style::new().fg(if high_risk { DANGER } else { ACCENT }));
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false }),
-        popup,
-    );
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let [text_area, input_area] =
+        Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).areas(inner);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
+    if high_risk {
+        let field = Block::default()
+            .borders(Borders::ALL)
+            .title(" confirm ")
+            .border_style(Style::new().fg(DANGER));
+        let field_inner = field.inner(input_area);
+        frame.render_widget(field, input_area);
+        frame.render_widget(
+            Paragraph::new(Span::styled(app.confirm_input.clone(), Style::new().bold())),
+            field_inner,
+        );
+        let x = field_inner.x + app.confirm_input.chars().count() as u16;
+        if x < field_inner.right() {
+            frame.set_cursor_position((x, field_inner.y));
+        }
+    }
 }
 
 fn draw_progress(frame: &mut Frame, area: Rect, app: &App) {

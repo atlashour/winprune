@@ -291,9 +291,21 @@ paths = ["%USERPROFILE%\\OneDrive"]
         assert!(render(&a).contains("Type yes"));
         press(&mut a, KeyCode::Enter);
         assert_eq!(a.screen, Screen::Confirm);
+        let screen = render(&a);
+        assert!(screen.contains("Type the word yes first"), "{screen}");
+        for c in "no".chars() {
+            press(&mut a, KeyCode::Char(c));
+        }
+        press(&mut a, KeyCode::Enter);
+        let screen = render(&a);
+        assert!(screen.contains("\"no\" is not yes"), "{screen}");
+        for _ in 0..2 {
+            press(&mut a, KeyCode::Backspace);
+        }
         for c in "yes".chars() {
             press(&mut a, KeyCode::Char(c));
         }
+        assert!(render(&a).contains("yes"));
         press(&mut a, KeyCode::Enter);
         assert_eq!(a.screen, Screen::Progress);
     }

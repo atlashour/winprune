@@ -48,6 +48,8 @@ pub struct App {
     pub detail_scroll: u16,
     pub dry_run: bool,
     pub confirm_input: String,
+    /// One-line answer to the last key that did nothing, cleared on the next key.
+    pub notice: Option<String>,
     pub progress: Vec<OpResult>,
     pub progress_total: usize,
     pub report: Option<Report>,
@@ -74,6 +76,7 @@ impl App {
             detail_scroll: 0,
             dry_run: false,
             confirm_input: String::new(),
+            notice: None,
             progress: Vec::new(),
             progress_total: 0,
             report: None,
@@ -192,6 +195,7 @@ impl App {
     }
 
     pub fn handle(&mut self, key: KeyEvent) -> Action {
+        self.notice = None;
         match self.screen {
             Screen::Select => self.handle_select(key),
             Screen::Confirm => self.handle_confirm(key),
@@ -289,6 +293,14 @@ impl App {
                 if self.high_risk_selected()
                     && !self.confirm_input.trim().eq_ignore_ascii_case("yes")
                 {
+                    self.notice = Some(if self.confirm_input.is_empty() {
+                        "Type the word yes first, then press Enter. Esc goes back.".to_string()
+                    } else {
+                        format!(
+                            "\"{}\" is not yes. Type yes to confirm, or Esc to go back.",
+                            self.confirm_input
+                        )
+                    });
                     return Action::None;
                 }
                 if self.needs_elevation_to_apply() {
