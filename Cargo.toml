@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Windows 10/11 debloater with a terminal UI"
 repository = "https://github.com/atlashour/winprune"
+license = "MIT"
 publish = false
 
 [dependencies]
