@@ -1,5 +1,5 @@
 use super::plan::{OpKind, OpState, Plan};
-use super::report::{OpResult, Report, Tally};
+use super::report::{OpResult, Report};
 use crate::system::{Apply, Outcome};
 
 /// Walks the selected items and hands every `WillApply` op to `sys`. Nothing here
@@ -28,9 +28,8 @@ pub fn apply_plan(
                 op: op.kind.to_string(),
                 outcome,
             };
-            report.tally.count(&result.outcome);
             on_event(&result);
-            report.results.push(result);
+            report.record(result);
         }
     }
     report
@@ -60,16 +59,6 @@ fn run_op(kind: &OpKind, sys: &mut dyn Apply) -> Outcome {
         OpKind::Delete { path } => sys.delete_path(path),
         OpKind::PackagePattern { .. } | OpKind::TaskPattern { .. } => {
             Outcome::Skipped("nothing to apply".into())
-        }
-    }
-}
-
-impl Tally {
-    fn count(&mut self, outcome: &Outcome) {
-        match outcome {
-            Outcome::Done => self.done += 1,
-            Outcome::Skipped(_) => self.skipped += 1,
-            Outcome::Failed(_) => self.failed += 1,
         }
     }
 }
@@ -150,6 +139,9 @@ startup = "disabled"
         });
         assert_eq!(seen.len(), 2);
         assert!(report.dry_run);
-        assert!(report.to_json().contains("\"schema\": 1"));
+        assert!(report.to_json().contains("\"schema\": 2"));
+        assert_eq!(report.items.len(), 1);
+        assert_eq!(report.items[0].to_apply, 1);
+        assert_eq!(report.items[0].done, 1);
     }
 }

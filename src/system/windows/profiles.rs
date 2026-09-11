@@ -2,6 +2,7 @@ use crate::engine::expand_env;
 use crate::system::{SysError, UserProfile};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, Weak};
 use windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE, HLOCAL, LUID, LocalFree};
 use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use windows::Win32::Security::{
@@ -166,11 +167,24 @@ unsafe fn sid_to_string(sid: PSID) -> Option<String> {
 }
 
 /// The Default profile hive, loaded under `HKEY_USERS\winprune-default` for as long
-/// as this value lives. Needs an elevated token with backup and restore privileges.
+/// as any `Arc` to it lives. One mount per process: the plan and the apply thread
+/// share it instead of each loading the hive under the same name.
 pub struct DefaultMount;
 
+static SHARED_MOUNT: Mutex<Weak<DefaultMount>> = Mutex::new(Weak::new());
+
 impl DefaultMount {
-    pub fn mount(folder: &Path) -> Result<DefaultMount, String> {
+    pub fn shared(folder: &Path) -> Result<Arc<DefaultMount>, String> {
+        let mut slot = SHARED_MOUNT.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = slot.upgrade() {
+            return Ok(existing);
+        }
+        let mount = Arc::new(Self::mount(folder)?);
+        *slot = Arc::downgrade(&mount);
+        Ok(mount)
+    }
+
+    fn mount(folder: &Path) -> Result<DefaultMount, String> {
         let hive = folder.join("NTUSER.DAT");
         if !hive.exists() {
             return Err(format!("{} not found", hive.display()));

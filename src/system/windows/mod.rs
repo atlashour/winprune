@@ -14,13 +14,14 @@ use crate::catalog::Startup;
 use profiles::DefaultMount;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
 use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
 
 pub struct WindowsSystem {
     elevated: bool,
     interactive_sid: Option<String>,
-    default_mount: RefCell<Option<Result<DefaultMount, String>>>,
+    default_mount: RefCell<Option<Result<Arc<DefaultMount>, String>>>,
 }
 
 impl WindowsSystem {
@@ -55,7 +56,7 @@ impl WindowsSystem {
                 Err("needs elevation".to_string())
             } else {
                 match profiles::default_path() {
-                    Some(folder) => DefaultMount::mount(&folder),
+                    Some(folder) => DefaultMount::shared(&folder),
                     None => Err("Default profile path unknown".to_string()),
                 }
             };

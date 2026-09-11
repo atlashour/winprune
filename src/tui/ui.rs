@@ -378,6 +378,7 @@ fn result_line(r: &crate::engine::OpResult) -> Line<'static> {
     let (tag, color, note) = match &r.outcome {
         Outcome::Done => ("  ok ", Color::Green, String::new()),
         Outcome::Skipped(why) => (" skip", WARN, format!("  ({why})")),
+        Outcome::Blocked(why) => ("block", WARN, format!("  ({why})")),
         Outcome::Failed(why) => (" FAIL", DANGER, format!("  ({why})")),
     };
     Line::from(vec![
@@ -412,6 +413,10 @@ fn draw_result(frame: &mut Frame, area: Rect, app: &App) {
             Span::raw("  skipped (protected or not removable)"),
         ]),
         Line::from(vec![
+            Span::styled(format!("{:>5}", t.blocked), Style::new().fg(WARN)),
+            Span::raw("  blocked by Windows"),
+        ]),
+        Line::from(vec![
             Span::styled(format!("{:>5}", t.absent), Style::new().fg(DIM)),
             Span::raw("  absent or already done"),
         ]),
@@ -436,13 +441,13 @@ fn draw_result(frame: &mut Frame, area: Rect, app: &App) {
     let failed: Vec<Line> = report
         .results
         .iter()
-        .filter(|r| matches!(r.outcome, Outcome::Failed(_)))
+        .filter(|r| matches!(r.outcome, Outcome::Failed(_) | Outcome::Blocked(_)))
         .map(result_line)
         .collect();
     if !failed.is_empty() {
         lines.push(Line::raw(""));
         lines.push(Line::from(Span::styled(
-            "Failures",
+            "Failed or blocked",
             Style::new().fg(DANGER).bold(),
         )));
         lines.extend(failed);

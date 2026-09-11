@@ -65,9 +65,10 @@ pub fn read_report_summary(dir: &Path) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     let t = value.get("tally")?;
     Some(format!(
-        "{} done, {} skipped, {} absent or already done, {} failed",
+        "{} done, {} skipped, {} blocked by Windows, {} absent or already done, {} failed",
         t.get("done")?.as_u64()?,
         t.get("skipped")?.as_u64()?,
+        t.get("blocked").and_then(|v| v.as_u64()).unwrap_or(0),
         t.get("absent")?.as_u64()?,
         t.get("failed")?.as_u64()?
     ))

@@ -378,6 +378,7 @@ fn apply_command(
         let line = match &r.outcome {
             Outcome::Done => format!("   ok  {}  {}", r.item, r.op),
             Outcome::Skipped(why) => format!(" skip  {}  {} ({why})", r.item, r.op),
+            Outcome::Blocked(why) => format!("block  {}  {} ({why})", r.item, r.op),
             Outcome::Failed(why) => format!(" FAIL  {}  {} ({why})", r.item, r.op),
         };
         println!("{line}");

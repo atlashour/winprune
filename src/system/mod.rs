@@ -126,6 +126,9 @@ pub trait Inspect {
 pub enum Outcome {
     Done,
     Skipped(String),
+    /// Windows refused the change by design (a kernel driver guarding the value, a
+    /// protected service). Not a bug in the tool, not something a retry fixes.
+    Blocked(String),
     Failed(String),
 }
 

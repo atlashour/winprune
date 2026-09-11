@@ -16,7 +16,31 @@ pub struct OpResult {
 pub struct Tally {
     pub done: usize,
     pub skipped: usize,
+    pub blocked: usize,
     pub absent: usize,
+    pub failed: usize,
+}
+
+impl Tally {
+    pub fn count(&mut self, outcome: &Outcome) {
+        match outcome {
+            Outcome::Done => self.done += 1,
+            Outcome::Skipped(_) => self.skipped += 1,
+            Outcome::Blocked(_) => self.blocked += 1,
+            Outcome::Failed(_) => self.failed += 1,
+        }
+    }
+}
+
+/// One line per selected item, so an item whose every op was absent still shows up.
+#[derive(Debug, Clone, Serialize)]
+pub struct ItemSummary {
+    pub id: String,
+    pub ops: usize,
+    pub to_apply: usize,
+    pub done: usize,
+    pub skipped: usize,
+    pub blocked: usize,
     pub failed: usize,
 }
 
@@ -28,7 +52,7 @@ pub struct Report {
     pub dry_run: bool,
     pub build: u32,
     pub level: Level,
-    pub items: Vec<String>,
+    pub items: Vec<ItemSummary>,
     pub results: Vec<OpResult>,
     pub tally: Tally,
 }
@@ -36,16 +60,40 @@ pub struct Report {
 impl Report {
     pub fn new(plan: &Plan, dry_run: bool) -> Report {
         Report {
-            schema: 1,
+            schema: 2,
             version: env!("CARGO_PKG_VERSION"),
             started: timestamp(),
             dry_run,
             build: plan.build,
             level: plan.level,
-            items: plan.selected().map(|i| i.id.clone()).collect(),
+            items: plan
+                .selected()
+                .map(|i| ItemSummary {
+                    id: i.id.clone(),
+                    ops: i.ops.len(),
+                    to_apply: i.will_apply(),
+                    done: 0,
+                    skipped: 0,
+                    blocked: 0,
+                    failed: 0,
+                })
+                .collect(),
             results: Vec::new(),
             tally: Tally::default(),
         }
+    }
+
+    pub fn record(&mut self, result: OpResult) {
+        if let Some(item) = self.items.iter_mut().find(|i| i.id == result.item) {
+            match &result.outcome {
+                Outcome::Done => item.done += 1,
+                Outcome::Skipped(_) => item.skipped += 1,
+                Outcome::Blocked(_) => item.blocked += 1,
+                Outcome::Failed(_) => item.failed += 1,
+            }
+        }
+        self.tally.count(&result.outcome);
+        self.results.push(result);
     }
 
     pub fn to_json(&self) -> String {
@@ -55,8 +103,8 @@ impl Report {
     pub fn summary(&self) -> String {
         let t = self.tally;
         let mut s = format!(
-            "{} done, {} skipped, {} absent or already done, {} failed",
-            t.done, t.skipped, t.absent, t.failed
+            "{} done, {} skipped, {} blocked by Windows, {} absent or already done, {} failed",
+            t.done, t.skipped, t.blocked, t.absent, t.failed
         );
         if self.dry_run {
             s.push_str(" (dry run, nothing was changed)");
@@ -70,6 +118,7 @@ fn serialize_outcome<S: serde::Serializer>(o: &Outcome, s: S) -> Result<S::Ok, S
     let (status, reason) = match o {
         Outcome::Done => ("done", None),
         Outcome::Skipped(r) => ("skipped", Some(r.as_str())),
+        Outcome::Blocked(r) => ("blocked", Some(r.as_str())),
         Outcome::Failed(r) => ("failed", Some(r.as_str())),
     };
     let mut st = s.serialize_struct("Outcome", 2)?;

@@ -104,7 +104,7 @@ pub fn write(
     };
     let key = match base.create_subkey_with_flags(&path, KEY_SET_VALUE) {
         Ok((key, _)) => key,
-        Err(e) => return Outcome::Failed(format!("open key: {e}")),
+        Err(e) => return denied_or_failed(sys, e, "open key"),
     };
     let result = match value {
         RegValue::Dword(n) => key.set_value(name, n),
@@ -113,8 +113,31 @@ pub fn write(
     };
     match result {
         Ok(()) => Outcome::Done,
-        Err(e) => Outcome::Failed(e.to_string()),
+        Err(e) => denied_or_failed(sys, e, "set value"),
     }
+}
+
+/// Access denied on a write the elevated token is entitled to make means a kernel
+/// driver refused it. The User Choice Protection driver ships with Windows and guards
+/// a handful of shell values (Widgets and news among them).
+fn denied_or_failed(sys: &WindowsSystem, e: io::Error, what: &str) -> Outcome {
+    if e.kind() == io::ErrorKind::PermissionDenied && sys.elevated {
+        let guard = if ucpd_present() {
+            "refused by Windows: the User Choice Protection driver guards this value"
+        } else {
+            "refused by Windows or by security software even though the token has write access"
+        };
+        return Outcome::Blocked(guard.to_string());
+    }
+    Outcome::Failed(format!("{what}: {e}"))
+}
+
+fn ucpd_present() -> bool {
+    RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey_with_flags("SYSTEM\\CurrentControlSet\\Services\\UCPD", KEY_READ)
+        .and_then(|k| k.get_value::<u32, _>("Start"))
+        .map(|start| start != 4)
+        .unwrap_or(false)
 }
 
 pub fn delete(sys: &WindowsSystem, root: &RegRoot, path: &str, name: &str) -> Outcome {
@@ -129,10 +152,10 @@ pub fn delete(sys: &WindowsSystem, root: &RegRoot, path: &str, name: &str) -> Ou
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 Outcome::Skipped("value not present".into())
             }
-            Err(e) => Outcome::Failed(e.to_string()),
+            Err(e) => denied_or_failed(sys, e, "delete value"),
         },
         Err(e) if e.kind() == io::ErrorKind::NotFound => Outcome::Skipped("key not present".into()),
-        Err(e) => Outcome::Failed(format!("open key: {e}")),
+        Err(e) => denied_or_failed(sys, e, "open key"),
     }
 }
 

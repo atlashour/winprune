@@ -8,7 +8,7 @@ category = "shell"
 level = "max"
 risk = "medium"
 summary = "Removes the Web Experience package, the widgets runtime and the Start Experiences feed app behind Widgets, disables Widgets by policy and hides the taskbar button for every profile."
-warning = "The Widgets button and board disappear. Windows 11 only."
+warning = "The Widgets button and board disappear. Windows 11 only. On 24H2 and later the User Choice Protection driver refuses the policy and taskbar values; the package removal is what takes Widgets away there."
 windows = { min_build = 22000 }
 
 [[item.step]]

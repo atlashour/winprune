@@ -4,7 +4,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Append-only log plus one JSON report per run. Elevated runs write under
-/// ProgramData; anything else stays in the user's local AppData.
+/// ProgramData; anything else stays in the user's local AppData. If the preferred
+/// folder cannot be written the next candidate is used, so a run always leaves a trace.
 pub struct Log {
     dir: PathBuf,
     file: Option<File>,
@@ -12,21 +13,36 @@ pub struct Log {
 
 impl Log {
     pub fn open(elevated: bool) -> Log {
-        let base = if elevated {
-            std::env::var_os("ProgramData")
-        } else {
-            std::env::var_os("LOCALAPPDATA")
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if elevated && let Some(p) = std::env::var_os("ProgramData") {
+            candidates.push(PathBuf::from(p));
         }
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-        let dir = base.join("winprune");
-        let _ = fs::create_dir_all(&dir);
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("winprune.log"))
-            .ok();
-        Log { dir, file }
+        if let Some(p) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(p));
+        }
+        candidates.push(std::env::temp_dir());
+
+        for base in candidates {
+            let dir = base.join("winprune");
+            if fs::create_dir_all(&dir).is_err() {
+                continue;
+            }
+            let opened = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("winprune.log"));
+            if let Ok(file) = opened {
+                return Log {
+                    dir,
+                    file: Some(file),
+                };
+            }
+        }
+        eprintln!("winprune could not open a log file anywhere; continuing without one");
+        Log {
+            dir: std::env::temp_dir().join("winprune"),
+            file: None,
+        }
     }
 
     pub fn path(&self) -> PathBuf {
@@ -34,8 +50,10 @@ impl Log {
     }
 
     pub fn line(&mut self, text: &str) {
-        if let Some(f) = &mut self.file {
-            let _ = writeln!(f, "[{}] {text}", timestamp());
+        if let Some(f) = &mut self.file
+            && writeln!(f, "[{}] {text}", timestamp()).is_err()
+        {
+            eprintln!("log write failed: {text}");
         }
     }
 
