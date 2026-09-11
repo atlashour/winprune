@@ -41,7 +41,7 @@ name = "Windows Update services"
 category = "update"
 level = "max"
 risk = "high"
-summary = "Disables the Windows Update, Update Orchestrator and Update Medic services. The medic service rejects the change, so its start type goes to the registry and comes back with the next cumulative update."
+summary = "Disables the Windows Update, Update Orchestrator and Update Medic services. Windows has been seen putting the Windows Update service back to manual start on its own within minutes; the policy item is the control that holds, this one is reinforcement."
 warning = "No updates at all, not even by hand, including Defender definitions through Windows Update. The Store also stops updating apps."
 requires = ["update.no-auto-update"]
 
