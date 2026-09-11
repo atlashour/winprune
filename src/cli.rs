@@ -6,7 +6,7 @@ use crate::system::Outcome;
 use crate::system::recorder::Recorder;
 use clap::{Args, Parser, Subcommand};
 use std::collections::HashSet;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
 pub const EXIT_OK: i32 = 0;
@@ -191,6 +191,23 @@ pub fn run(cli: Cli) -> i32 {
             } else {
                 print!("{}", render_plan(&plan, all));
             }
+            let mut log = Log::open(ctx.info.elevated);
+            let saved = log.write_plan(&plan);
+            log.line(&format!(
+                "plan level {} build {} elevated {}: {} items selected, {} operations{}",
+                plan.level,
+                plan.build,
+                plan.elevated,
+                plan.selected().count(),
+                plan.will_apply_count(),
+                saved
+                    .as_ref()
+                    .map(|p| format!(", saved to {}", p.display()))
+                    .unwrap_or_default()
+            ));
+            if !json && let Some(p) = saved {
+                println!("plan saved to {}", p.display());
+            }
             EXIT_OK
         }
         Some(Command::Apply { dry_run, yes }) => {
@@ -331,6 +348,12 @@ fn apply_command(
     yes: bool,
 ) -> i32 {
     if !dry_run && !ctx.info.elevated {
+        if !io::stdin().is_terminal() {
+            eprintln!(
+                "apply needs administrator rights; the UAC prompt cannot be answered from a script. Run it from an elevated console."
+            );
+            return EXIT_ELEVATION;
+        }
         if !yes && !confirm("This will change the system. Type yes to continue: ") {
             return EXIT_ABORTED;
         }

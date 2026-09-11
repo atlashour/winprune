@@ -44,6 +44,12 @@ impl Log {
         fs::write(&path, report.to_json()).ok().map(|_| path)
     }
 
+    pub fn write_plan(&self, plan: &crate::engine::Plan) -> Option<PathBuf> {
+        let path = self.dir.join(format!("plan-{}.json", file_stamp()));
+        let text = serde_json::to_string_pretty(plan).ok()?;
+        fs::write(&path, text).ok().map(|_| path)
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
