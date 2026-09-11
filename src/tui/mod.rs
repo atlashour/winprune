@@ -8,6 +8,7 @@ use crate::handoff;
 use crate::system::recorder::Recorder;
 use app::{Action, App, Screen};
 use crossterm::event::{self, Event, KeyEventKind};
+use std::io::IsTerminal;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -17,6 +18,19 @@ enum Progress {
 }
 
 pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> i32 {
+    if !(std::io::stdin().is_terminal() && std::io::stdout().is_terminal()) {
+        eprintln!(
+            "winprune needs an interactive console for the TUI; from scripts use `winprune plan` or `winprune apply --level {} --yes`",
+            filter.level
+        );
+        return EXIT_USAGE;
+    }
+    let mut trace = Log::open(ctx.info.elevated);
+    trace.line(&format!(
+        "tui start level {} build {} elevated {}",
+        filter.level, ctx.info.build, ctx.info.elevated
+    ));
+
     let sys = ctx.system();
     let selection = filter.selection();
     let plan = engine::build_plan(
@@ -34,6 +48,10 @@ pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> 
     let mut terminal = ratatui::init();
     let code = event_loop(&mut terminal, &mut app, &ctx);
     ratatui::restore();
+    trace.line(&format!("tui exit code {code}"));
+    if code == EXIT_USAGE {
+        eprintln!("the console stopped delivering input; nothing was applied");
+    }
     if let Some(dir) = &ctx.run_dir {
         if let Some(report) = &app.report {
             handoff::write_report(dir, report);
