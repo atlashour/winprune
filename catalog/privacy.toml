@@ -1,8 +1,5 @@
-# Advertising, suggestions, activity tracking and web search. Machine policies go under
-# HKLM; the per-user toggles are written for every profile on the machine, including the
-# Default profile, so new accounts start clean. Several CloudContent policies are only
-# honoured on Enterprise and Education; the per-user values are what works on Pro and
-# Home, and both are written.
+# CloudContent policies only count on Enterprise/Education; the HKCU toggles are what
+# works on Pro and Home, so both are written.
 
 [[item]]
 id = "privacy.consumer-features"

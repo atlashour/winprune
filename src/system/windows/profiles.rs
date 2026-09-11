@@ -1,7 +1,3 @@
-//! User profiles and hive mounting. ProfileList is where Windows keeps the SID to
-//! folder map, and NTUSER.DAT of the Default profile is what every new account is
-//! copied from. Both are mechanisms, not catalog choices.
-
 use crate::engine::expand_env;
 use crate::system::{SysError, UserProfile};
 use std::ffi::c_void;
@@ -27,6 +23,8 @@ const PROFILE_LIST: &str = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Pro
 /// Mount point for the Default profile hive; unique so it never collides with the
 /// `HKU\Default` other scripts use.
 pub const DEFAULT_MOUNT: &str = "winprune-default";
+// ProfileList maps SIDs to profile folders; the Default profile's NTUSER.DAT is what
+// new accounts are copied from.
 
 pub fn list() -> Result<Vec<UserProfile>, SysError> {
     let root = RegKey::predef(HKEY_LOCAL_MACHINE)

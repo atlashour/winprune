@@ -500,8 +500,7 @@ fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
             ));
         }
     }
-    // One line per step, not per pattern: the user only needs to know that the
-    // provisioned list was out of reach.
+    // one line per step, not per pattern
     if matches!(snap.provisioned, Provisioned::NeedsElevation) {
         ops.push(
             Op::new(
@@ -555,8 +554,7 @@ fn plan_registry(
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
 ) {
-    // A read that fails (access denied, hive not mounted) must not look like "absent":
-    // the apply step gets to try and report for itself.
+    // unreadable is not the same as absent; let apply try
     let (current, unreadable) = match sys.registry_value(&root, path, name) {
         Ok(v) => (v, None),
         Err(e) => (None, Some(format!("could not read: {e}"))),
@@ -884,7 +882,7 @@ value = 1
     }
 
     #[test]
-    fn appx_deprovisions_before_removing_and_flags_non_removable() {
+    fn appx_deprovisions_first() {
         let sys = Fake::default()
             .with_package("Microsoft.DemoApp", false)
             .with_package("Microsoft.DemoCore", true)
@@ -937,7 +935,7 @@ value = 1
     }
 
     #[test]
-    fn service_with_same_startup_is_already_done_and_running_service_is_stopped() {
+    fn running_service_gets_a_stop_op() {
         let sys = Fake::default().with_service("DemoSvc", Startup::Disabled, true);
         let plan = build_plan(
             &catalog(),
@@ -1061,7 +1059,7 @@ paths = ["%LOCALAPPDATA%\\Demo"]
 "#;
 
     #[test]
-    fn all_users_scope_fans_out_to_loaded_profiles_and_default() {
+    fn all_users_scope() {
         let catalog = Catalog::parse("t", SCOPE_CATALOG).unwrap();
         let sys = Fake::default()
             .with_profile("S-1-5-21-1", "alice", "C:\\Users\\alice", true)
@@ -1105,7 +1103,7 @@ paths = ["%LOCALAPPDATA%\\Demo"]
     }
 
     #[test]
-    fn user_scope_without_known_interactive_user_falls_back_to_hkcu() {
+    fn user_scope_falls_back_to_hkcu() {
         let catalog =
             Catalog::parse("t", SCOPE_CATALOG.replace("all-users", "user").as_str()).unwrap();
         let plan = build_plan(

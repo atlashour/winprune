@@ -1,6 +1,3 @@
-//! Interactive front end. `app` owns the state and key handling, `ui` renders it; the
-//! event loop here only wires them to the terminal and the engine.
-
 mod app;
 mod ui;
 

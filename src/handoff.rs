@@ -1,8 +1,6 @@
-//! Handing a run over to the elevated copy of winprune. The unelevated launcher writes
-//! everything the child needs into a folder under ProgramData (readable by both the
-//! interactive user and whichever administrator answers the UAC prompt), starts the
-//! child with `--run-dir`, waits, and reads the report the child leaves behind.
-//! Nothing travels on the command line except that one path.
+// Elevated runs get their configuration from a folder under ProgramData: both the
+// interactive user and whichever admin answers the UAC prompt can read it, and it
+// avoids quoting the whole selection on the command line.
 
 use crate::catalog::Level;
 use crate::engine::{Report, file_stamp};
@@ -75,9 +73,8 @@ pub fn read_report_summary(dir: &Path) -> Option<String> {
     ))
 }
 
-/// Writes the request, runs the elevated child and returns its exit code after
-/// printing whatever it reported. `restore_terminal` runs before the UAC prompt so a
-/// TUI caller hands the console back first.
+/// Writes the request, runs the elevated child, prints what it reported and returns
+/// its exit code. Callers restore the terminal before this.
 pub fn run_elevated(request: &Request) -> i32 {
     let dir = match new_run_dir() {
         Ok(d) => d,

@@ -1,7 +1,3 @@
-//! Facts about the running machine and the process: Windows build, elevation, and the
-//! UAC relaunch. Kept apart from `system` because the engine needs the build number
-//! before any inspection happens.
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OsInfo {
     pub build: u32,

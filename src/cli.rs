@@ -7,7 +7,7 @@ use crate::system::recorder::Recorder;
 use clap::{Args, Parser, Subcommand};
 use std::collections::HashSet;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_USAGE: i32 = 1;
@@ -401,11 +401,6 @@ fn pause(prompt: &str) {
     let _ = io::stdout().flush();
     let mut answer = String::new();
     let _ = io::stdin().read_line(&mut answer);
-}
-
-#[allow(dead_code)]
-fn _paths_are_absolute(p: &Path) -> bool {
-    p.is_absolute()
 }
 
 #[cfg(test)]

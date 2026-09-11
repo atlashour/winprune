@@ -1,7 +1,4 @@
-# Diagnostic data, compatibility reporting, Cortana, Copilot, Recall and the AI features
-# bolted onto inbox apps. Policies that Microsoft documents as user-scoped are written
-# under HKCU for every profile on the machine, including the Default profile that seeds
-# new accounts.
+# User-scoped policies go under HKCU with scope = "all-users".
 
 [[item]]
 id = "telemetry.services"

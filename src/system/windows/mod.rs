@@ -1,8 +1,3 @@
-//! The real thing. Every submodule wraps one Windows subsystem and speaks only in the
-//! types from `system`. Errors are mapped to `Outcome::Skipped` when Windows refuses
-//! by design (protected service, package that is part of Windows) and to
-//! `Outcome::Failed` otherwise.
-
 mod appx;
 mod files;
 mod process;
@@ -29,16 +24,12 @@ pub struct WindowsSystem {
 }
 
 impl WindowsSystem {
-    /// `interactive_sid` is the account winprune acts for when known (handed over by
-    /// the unelevated launcher); otherwise it is detected from the console session.
-    /// COM is initialised on the calling thread for the Task Scheduler; WinRT
-    /// activation is fine with the multithreaded apartment as well.
+    /// `interactive_sid` comes from the unelevated launcher when there is one;
+    /// otherwise the console session decides.
     pub fn new(elevated: bool, interactive_sid: Option<String>) -> WindowsSystem {
+        // MTA for the Task Scheduler COM calls; WinRT is fine with it too.
         unsafe {
-            let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
-            if hr == RPC_E_CHANGED_MODE {
-                // Already a single-threaded apartment; blocking WinRT waits still work
-                // because nothing here pumps messages, but note it for the log.
+            if CoInitializeEx(None, COINIT_MULTITHREADED) == RPC_E_CHANGED_MODE {
                 eprintln!("note: thread already initialised COM as STA");
             }
         }

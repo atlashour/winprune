@@ -1,7 +1,4 @@
-# Uninstalling OneDrive never touches the user's OneDrive folder. Deleting that folder
-# is a separate max-level item whose warning carries the live file count. Per-user
-# leftovers are cleaned for every profile, and the Default profile loses the setup hook
-# that installs OneDrive for each new account.
+# Uninstall never touches the user's OneDrive folder; that is its own max item.
 
 [[item]]
 id = "onedrive.uninstall"

@@ -58,9 +58,7 @@ pub struct UserProfile {
     pub loaded: bool,
 }
 
-/// Where a registry step lands. Per-user steps are addressed by SID so the same op can
-/// run against the interactive user, any other loaded profile, or the Default profile
-/// that seeds new accounts.
+/// Where a registry step lands. Per-user roots are addressed by SID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "root", rename_all = "snake_case")]
 pub enum RegRoot {

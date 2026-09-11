@@ -8,15 +8,14 @@ use windows::Win32::Foundation::{
 };
 use windows::core::{HRESULT, HSTRING};
 
-// Deployment reports the generic ERROR_REMOVE_FAILED as the operation error and the
-// real reason as the extended code: ERROR_NOT_SUPPORTED means "part of Windows".
+// ERROR_REMOVE_FAILED is the generic code; the extended one carries the reason, and
+// ERROR_NOT_SUPPORTED there means "part of Windows".
 const REMOVE_FAILED: HRESULT = HRESULT::from_win32(ERROR_REMOVE_FAILED.0);
 const NOT_SUPPORTED: HRESULT = HRESULT::from_win32(ERROR_NOT_SUPPORTED.0);
 const NOT_INSTALLED: HRESULT = HRESULT::from_win32(ERROR_INSTALL_PACKAGE_NOT_FOUND.0);
 
-/// Windows keeps a marker per deprovisioned family so feature updates and new profiles
-/// do not bring the app back. The WinRT call is not documented to write it, so it is
-/// written here as well.
+// Marker key that keeps feature updates and new profiles from bringing a
+// deprovisioned app back. Not documented as written by the WinRT call, so write it.
 const DEPROVISIONED: &str =
     "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Appx\\AppxAllUserStore\\Deprovisioned";
 

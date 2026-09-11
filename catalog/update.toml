@@ -1,7 +1,5 @@
-# Windows Update. Max level only: kiosks, signage, appliances that are patched by
-# reimaging. The Update Medic service refuses configuration changes even from an
-# administrator, so its start type is written straight to the registry and Windows
-# restores it with the next cumulative update; the policy is the part that holds.
+# Max only. WaaSMedicSvc refuses ChangeServiceConfig, so it goes to the registry and
+# the next cumulative update puts it back; the policy is what holds.
 
 [[item]]
 id = "update.delivery-optimization"

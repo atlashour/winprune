@@ -1,8 +1,4 @@
-# Preinstalled apps. Patterns are globs against the package name (not the family name),
-# so a rename that keeps the stem still matches. Packages Windows marks as part of the
-# OS are skipped by the engine, never listed here. Anything that also removes local
-# user data (Sticky Notes) or that other Windows features lean on (Get Help, Xbox
-# identity) sits at high or max with a warning.
+# Patterns are globs on the package name, not the family name.
 
 [[item]]
 id = "appx.cortana"
