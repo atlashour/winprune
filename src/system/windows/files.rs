@@ -37,10 +37,17 @@ fn walk(dir: &Path, total: &mut PathInfo) {
     }
 }
 
-pub fn run(exe: &Path, args: &[String]) -> Outcome {
+pub fn run(exe: &Path, args: &[String], skip_exit_codes: &[i32]) -> Outcome {
     match Command::new(exe).args(args).status() {
         Ok(status) if status.success() => Outcome::Done,
-        Ok(status) => Outcome::Failed(format!("exit code {}", status.code().unwrap_or(-1))),
+        Ok(status) => {
+            let code = status.code().unwrap_or(-1);
+            if skip_exit_codes.contains(&code) {
+                Outcome::Skipped(format!("nothing to do (exit code {code})"))
+            } else {
+                Outcome::Failed(format!("exit code {code}"))
+            }
+        }
         Err(e) => Outcome::Failed(e.to_string()),
     }
 }

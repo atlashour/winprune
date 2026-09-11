@@ -52,7 +52,11 @@ fn run_op(kind: &OpKind, sys: &mut dyn Apply) -> Outcome {
         OpKind::TaskDisable { path } => sys.task_disable(path),
         OpKind::TaskDelete { path } => sys.task_delete(path),
         OpKind::Kill { name } => sys.kill_process(name),
-        OpKind::Run { exe, args } => sys.run(exe, args),
+        OpKind::Run {
+            exe,
+            args,
+            skip_exit_codes,
+        } => sys.run(exe, args, skip_exit_codes),
         OpKind::Delete { path } => sys.delete_path(path),
         OpKind::PackagePattern { .. } | OpKind::TaskPattern { .. } => {
             Outcome::Skipped("nothing to apply".into())

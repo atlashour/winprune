@@ -142,6 +142,7 @@ pub trait Apply {
     fn task_disable(&mut self, path: &str) -> Outcome;
     fn task_delete(&mut self, path: &str) -> Outcome;
     fn kill_process(&mut self, name: &str) -> Outcome;
-    fn run(&mut self, exe: &Path, args: &[String]) -> Outcome;
+    /// Exit codes listed in `skip_exit_codes` count as "nothing to do", not failure.
+    fn run(&mut self, exe: &Path, args: &[String], skip_exit_codes: &[i32]) -> Outcome;
     fn delete_path(&mut self, path: &Path) -> Outcome;
 }

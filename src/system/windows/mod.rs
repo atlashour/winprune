@@ -169,8 +169,8 @@ impl Apply for WindowsSystem {
         process::kill(name)
     }
 
-    fn run(&mut self, exe: &Path, args: &[String]) -> Outcome {
-        files::run(exe, args)
+    fn run(&mut self, exe: &Path, args: &[String], skip_exit_codes: &[i32]) -> Outcome {
+        files::run(exe, args, skip_exit_codes)
     }
 
     fn delete_path(&mut self, path: &Path) -> Outcome {

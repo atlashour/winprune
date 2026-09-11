@@ -96,6 +96,7 @@ pub enum OpKind {
     Run {
         exe: PathBuf,
         args: Vec<String>,
+        skip_exit_codes: Vec<i32>,
     },
     Delete {
         path: PathBuf,
@@ -125,7 +126,7 @@ impl fmt::Display for OpKind {
             OpKind::TaskDelete { path } => write!(f, "delete task {path}"),
             OpKind::TaskPattern { pattern } => write!(f, "task {pattern}"),
             OpKind::Kill { name } => write!(f, "kill {name}"),
-            OpKind::Run { exe, args } => write!(f, "run {} {}", exe.display(), args.join(" ")),
+            OpKind::Run { exe, args, .. } => write!(f, "run {} {}", exe.display(), args.join(" ")),
             OpKind::Delete { path } => write!(f, "delete {}", path.display()),
         }
     }
@@ -411,7 +412,11 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
             }
             Step::Task { patterns, action } => plan_tasks(patterns, *action, snap, &mut ops),
             Step::Kill { processes } => plan_kill(processes, snap, &mut ops),
-            Step::Run { candidates, args } => plan_run(candidates, args, sys, &mut ops),
+            Step::Run {
+                candidates,
+                args,
+                skip_exit_codes,
+            } => plan_run(candidates, args, skip_exit_codes, sys, &mut ops),
             Step::Delete { paths, scope } => {
                 for (who, folder) in snap.user_folders(*scope) {
                     plan_delete(
@@ -665,7 +670,13 @@ fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     }
 }
 
-fn plan_run(candidates: &[String], args: &[String], sys: &dyn Inspect, ops: &mut Vec<Op>) {
+fn plan_run(
+    candidates: &[String],
+    args: &[String],
+    skip_exit_codes: &[i32],
+    sys: &dyn Inspect,
+    ops: &mut Vec<Op>,
+) {
     for candidate in candidates {
         let exe = PathBuf::from(expand_env(candidate));
         if matches!(sys.path_info(&exe), Ok(Some(_))) {
@@ -673,6 +684,7 @@ fn plan_run(candidates: &[String], args: &[String], sys: &dyn Inspect, ops: &mut
                 OpKind::Run {
                     exe,
                     args: args.to_vec(),
+                    skip_exit_codes: skip_exit_codes.to_vec(),
                 },
                 OpState::WillApply,
             ));
@@ -684,6 +696,7 @@ fn plan_run(candidates: &[String], args: &[String], sys: &dyn Inspect, ops: &mut
             OpKind::Run {
                 exe: PathBuf::from(expand_env(&candidates[0])),
                 args: args.to_vec(),
+                skip_exit_codes: skip_exit_codes.to_vec(),
             },
             OpState::Absent,
         )

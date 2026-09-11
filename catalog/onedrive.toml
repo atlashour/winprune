@@ -20,6 +20,8 @@ processes = ["OneDrive", "FileCoAuth"]
 kind = "run"
 candidates = ["%SystemRoot%\\SysWOW64\\OneDriveSetup.exe", "%SystemRoot%\\System32\\OneDriveSetup.exe"]
 args = ["/uninstall"]
+# 0x8004069B: the setup found no OneDrive to uninstall for this account.
+skip_exit_codes = [-2147219813]
 
 [[item.step]]
 kind = "delete"

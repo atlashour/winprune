@@ -210,6 +210,9 @@ pub enum Step {
         candidates: Vec<String>,
         #[serde(default)]
         args: Vec<String>,
+        /// Exit codes that mean "nothing to do" rather than failure.
+        #[serde(default)]
+        skip_exit_codes: Vec<i32>,
     },
     Delete {
         paths: Vec<String>,

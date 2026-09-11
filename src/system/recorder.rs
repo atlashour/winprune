@@ -58,7 +58,7 @@ impl Apply for Recorder {
         self.note(format!("kill {name}"))
     }
 
-    fn run(&mut self, exe: &Path, args: &[String]) -> Outcome {
+    fn run(&mut self, exe: &Path, args: &[String], _skip_exit_codes: &[i32]) -> Outcome {
         self.note(format!("run {} {}", exe.display(), args.join(" ")))
     }
 
