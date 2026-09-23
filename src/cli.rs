@@ -184,7 +184,8 @@ pub fn run(cli: Cli) -> i32 {
             // Started by a double click without elevation: ask through UAC right away
             // and let the elevated window take over. A refused prompt keeps the
             // unelevated TUI in this window, which still plans and dry-runs.
-            if wants_elevated_tui(ctx.info.elevated, os::owns_console()) {
+            let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+            if wants_elevated_tui(ctx.info.elevated, os::owns_console() && interactive) {
                 let mut request = cli.filter.request(false, true);
                 request.interactive_sid = crate::system::windows::profiles::current_sid();
                 match handoff::start_elevated(&request) {
