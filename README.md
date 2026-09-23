@@ -47,6 +47,11 @@ Plan and dry-run never need administrator rights. Applying does: winprune writes
 run into a folder under `%ProgramData%\winprune\runs`, asks through UAC, continues in
 a new window, and prints the outcome back in the window you started from.
 
+Double-clicking `winprune.exe` asks through UAC first and opens the terminal UI
+already elevated, so a whole run happens in one window. Refuse the prompt and the UI
+opens without elevation instead. A window that winprune opened for itself stays until
+you press Enter.
+
 ## Per-user settings
 
 Many switches live in the user's own registry hive. winprune writes them for the
@@ -103,5 +108,7 @@ and delete steps under a user profile take `scope = "user" | "all-users" |
 cargo build --release
 ```
 
-Rust 1.88 or newer, MSVC toolchain. Tests run with `cargo test` and do not need
-administrator rights.
+Rust 1.88 or newer, MSVC toolchain. The C runtime is linked statically
+(`.cargo/config.toml`), so the executable runs on a fresh Windows install without the
+Visual C++ redistributable. Tests run with `cargo test` and do not need administrator
+rights.
