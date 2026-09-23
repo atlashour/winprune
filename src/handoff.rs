@@ -25,9 +25,12 @@ pub struct Request {
     /// Account the per-user steps are for: the user who started winprune.
     #[serde(default)]
     pub interactive_sid: Option<String>,
-    /// Open the TUI at the confirmation screen instead of running the CLI apply.
+    /// Open the TUI instead of running the CLI apply.
     #[serde(default)]
     pub tui: bool,
+    /// Start the TUI at the confirmation screen: the selection was already made.
+    #[serde(default)]
+    pub at_confirm: bool,
 }
 
 pub const REQUEST_FILE: &str = "request.json";
@@ -74,21 +77,32 @@ pub fn read_report_summary(dir: &Path) -> Option<String> {
     ))
 }
 
+fn prepare(request: &Request) -> Result<(PathBuf, Vec<String>), String> {
+    let dir = new_run_dir()?;
+    write_request(&dir, request)?;
+    let args = vec!["--run-dir".to_string(), dir.display().to_string()];
+    Ok((dir, args))
+}
+
+/// Starts the elevated child and returns without waiting: the caller's window is
+/// about to close and the child has its own.
+pub fn start_elevated(request: &Request) -> Result<(), String> {
+    let (dir, args) = prepare(request)?;
+    os::start_elevated(&args).inspect_err(|_| {
+        let _ = fs::remove_dir_all(&dir);
+    })
+}
+
 /// Writes the request, runs the elevated child, prints what it reported and returns
 /// its exit code. Callers restore the terminal before this.
 pub fn run_elevated(request: &Request) -> i32 {
-    let dir = match new_run_dir() {
-        Ok(d) => d,
+    let (dir, args) = match prepare(request) {
+        Ok(p) => p,
         Err(e) => {
             eprintln!("{e}");
             return crate::cli::EXIT_ELEVATION;
         }
     };
-    if let Err(e) = write_request(&dir, request) {
-        eprintln!("{e}");
-        return crate::cli::EXIT_ELEVATION;
-    }
-    let args = vec!["--run-dir".to_string(), dir.display().to_string()];
     match os::relaunch_elevated(&args) {
         Ok(code) => {
             match read_report_summary(&dir) {
@@ -124,6 +138,7 @@ mod tests {
             dry_run: true,
             interactive_sid: Some("S-1-5-21-1".into()),
             tui: true,
+            at_confirm: true,
         };
         let text = serde_json::to_string(&request).unwrap();
         let back: Request = serde_json::from_str(&text).unwrap();

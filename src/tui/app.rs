@@ -379,6 +379,7 @@ impl App {
             dry_run: self.dry_run,
             interactive_sid: None,
             tui: true,
+            at_confirm: true,
         }
     }
 }

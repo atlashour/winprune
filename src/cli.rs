@@ -108,6 +108,7 @@ impl Filter {
             dry_run,
             interactive_sid: None,
             tui,
+            at_confirm: false,
         }
     }
 
@@ -179,7 +180,20 @@ pub fn run(cli: Cli) -> i32 {
     };
 
     match cli.command {
-        None => crate::tui::run(catalog, cli.filter, ctx, false),
+        None => {
+            // Started by a double click without elevation: ask through UAC right away
+            // and let the elevated window take over. A refused prompt keeps the
+            // unelevated TUI in this window, which still plans and dry-runs.
+            if wants_elevated_tui(ctx.info.elevated, os::owns_console()) {
+                let mut request = cli.filter.request(false, true);
+                request.interactive_sid = crate::system::windows::profiles::current_sid();
+                match handoff::start_elevated(&request) {
+                    Ok(()) => return EXIT_OK,
+                    Err(e) => eprintln!("{e}; continuing without elevation"),
+                }
+            }
+            crate::tui::run(catalog, cli.filter, ctx, false)
+        }
         Some(Command::Catalog { what }) => catalog_command(&catalog, what),
         Some(Command::Plan { json, all }) => {
             let plan = build(&catalog, &cli.filter, &ctx);
@@ -231,10 +245,14 @@ fn run_request(request: Request, dir: PathBuf, info: os::OsInfo) -> i32 {
         run_dir: Some(dir),
     };
     if request.tui {
-        crate::tui::run(catalog, filter, ctx, true)
+        crate::tui::run(catalog, filter, ctx, request.at_confirm)
     } else {
         apply_command(&catalog, &filter, &ctx, request.dry_run, true)
     }
+}
+
+fn wants_elevated_tui(elevated: bool, owns_console: bool) -> bool {
+    owns_console && !elevated
 }
 
 fn build(catalog: &Catalog, filter: &Filter, ctx: &Context) -> Plan {
@@ -400,8 +418,6 @@ fn apply_command(
     println!("log: {}", log.path().display());
     if let Some(dir) = &ctx.run_dir {
         handoff::write_report(dir, &report);
-        // The UAC relaunch opens its own console; keep it until the user has read this.
-        pause("Press Enter to close.");
     }
     if report.tally.failed > 0 {
         EXIT_FAILURES
@@ -420,8 +436,13 @@ fn confirm(prompt: &str) -> bool {
     answer.trim().eq_ignore_ascii_case("yes")
 }
 
-fn pause(prompt: &str) {
-    print!("{prompt}");
+/// Keeps a window that exists only for us (double click, UAC relaunch) open until
+/// the user has read what is on it.
+pub fn hold_window_open() {
+    if !os::owns_console() || !io::stdin().is_terminal() {
+        return;
+    }
+    print!("Press Enter to close.");
     let _ = io::stdout().flush();
     let mut answer = String::new();
     let _ = io::stdin().read_line(&mut answer);
@@ -438,6 +459,13 @@ mod tests {
         assert_eq!(cli.filter.level, Level::Max);
         assert_eq!(cli.filter.skip, vec!["a.b", "c.d"]);
         assert!(matches!(cli.command, Some(Command::Plan { .. })));
+    }
+
+    #[test]
+    fn double_click_without_elevation_asks_for_it() {
+        assert!(wants_elevated_tui(false, true));
+        assert!(!wants_elevated_tui(true, true));
+        assert!(!wants_elevated_tui(false, false));
     }
 
     #[test]

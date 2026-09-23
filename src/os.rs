@@ -32,6 +32,30 @@ pub fn relaunch_elevated(_args: &[String]) -> Result<i32, String> {
     Err("elevation is only available on Windows".into())
 }
 
+/// Starts this executable again through the UAC prompt with `args` and returns as soon
+/// as it is running. `Err` means the prompt was refused or the launch failed.
+#[cfg(windows)]
+pub fn start_elevated(args: &[String]) -> Result<(), String> {
+    win::start_elevated(args)
+}
+
+#[cfg(not(windows))]
+pub fn start_elevated(_args: &[String]) -> Result<(), String> {
+    Err("elevation is only available on Windows".into())
+}
+
+/// True when no other process shares our console: winprune was started by a double
+/// click (or by its own UAC relaunch), so the window disappears as soon as we exit.
+#[cfg(windows)]
+pub fn owns_console() -> bool {
+    win::owns_console()
+}
+
+#[cfg(not(windows))]
+pub fn owns_console() -> bool {
+    false
+}
+
 /// Command line quoting the way the C runtime parses it: backslashes are literal
 /// unless they precede a quote.
 pub fn quote_args(args: &[String]) -> String {
@@ -72,6 +96,7 @@ mod win {
     use windows::Win32::Security::{
         GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
     };
+    use windows::Win32::System::Console::GetConsoleProcessList;
     use windows::Win32::System::Threading::{
         GetCurrentProcess, GetExitCodeProcess, INFINITE, OpenProcessToken, WaitForSingleObject,
     };
@@ -112,7 +137,12 @@ mod win {
         }
     }
 
-    pub fn relaunch_elevated(args: &[String]) -> Result<i32, String> {
+    pub fn owns_console() -> bool {
+        let mut list = [0u32; 2];
+        unsafe { GetConsoleProcessList(&mut list) == 1 }
+    }
+
+    fn run_as(args: &[String]) -> Result<HANDLE, String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let file = HSTRING::from(exe.as_os_str());
         let params = HSTRING::from(super::quote_args(args));
@@ -133,13 +163,28 @@ mod win {
                     format!("elevation failed: {}", e.message())
                 }
             })?;
-            if info.hProcess.is_invalid() {
-                return Err("elevated process did not start".into());
-            }
-            WaitForSingleObject(info.hProcess, INFINITE);
+        }
+        if info.hProcess.is_invalid() {
+            return Err("elevated process did not start".into());
+        }
+        Ok(info.hProcess)
+    }
+
+    pub fn start_elevated(args: &[String]) -> Result<(), String> {
+        let process = run_as(args)?;
+        unsafe {
+            let _ = CloseHandle(process);
+        }
+        Ok(())
+    }
+
+    pub fn relaunch_elevated(args: &[String]) -> Result<i32, String> {
+        let process = run_as(args)?;
+        unsafe {
+            WaitForSingleObject(process, INFINITE);
             let mut code = 0u32;
-            let _ = GetExitCodeProcess(info.hProcess, &mut code);
-            let _ = CloseHandle(info.hProcess);
+            let _ = GetExitCodeProcess(process, &mut code);
+            let _ = CloseHandle(process);
             Ok(code as i32)
         }
     }

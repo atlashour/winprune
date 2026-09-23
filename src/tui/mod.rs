@@ -52,20 +52,14 @@ pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> 
     if code == EXIT_USAGE {
         eprintln!("the console stopped delivering input; nothing was applied");
     }
-    if let Some(dir) = &ctx.run_dir {
-        if let Some(report) = &app.report {
-            handoff::write_report(dir, report);
-        }
-        // This is the elevated window; let the user read the result before it closes.
-        if app.report.is_some() {
-            println!(
-                "{}",
-                app.report.as_ref().map(|r| r.summary()).unwrap_or_default()
-            );
-        }
-        println!("Press Enter to close.");
-        let mut line = String::new();
-        let _ = std::io::stdin().read_line(&mut line);
+    if let Some(dir) = &ctx.run_dir
+        && let Some(report) = &app.report
+    {
+        handoff::write_report(dir, report);
+    }
+    // The TUI screen is gone; leave the outcome in the window for whoever is closing it.
+    if let Some(report) = &app.report {
+        println!("{}", report.summary());
     }
     code
 }
