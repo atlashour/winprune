@@ -188,7 +188,7 @@ pub fn run(cli: Cli) -> i32 {
             // unelevated TUI in this window, which still plans and dry-runs.
             let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
             let mut notice = None;
-            if wants_elevated_tui(ctx.info.elevated, os::owns_console() && interactive) {
+            if os::owns_console() && interactive && !ctx.info.elevated {
                 let mut request = cli.filter.request(false, true);
                 request.interactive_sid = crate::system::windows::profiles::current_sid();
                 let mut log = Log::open(ctx.info.elevated);
@@ -267,10 +267,6 @@ fn run_request(request: Request, dir: PathBuf, info: os::OsInfo) -> i32 {
     } else {
         apply_command(&catalog, &filter, &ctx, request.dry_run, true)
     }
-}
-
-fn wants_elevated_tui(elevated: bool, owns_console: bool) -> bool {
-    owns_console && !elevated
 }
 
 fn build(catalog: &Catalog, filter: &Filter, ctx: &Context) -> Plan {
@@ -478,13 +474,6 @@ mod tests {
         assert_eq!(cli.filter.level, Level::Max);
         assert_eq!(cli.filter.skip, vec!["a.b", "c.d"]);
         assert!(matches!(cli.command, Some(Command::Plan { .. })));
-    }
-
-    #[test]
-    fn double_click_without_elevation_asks_for_it() {
-        assert!(wants_elevated_tui(false, true));
-        assert!(!wants_elevated_tui(true, true));
-        assert!(!wants_elevated_tui(false, false));
     }
 
     #[test]
