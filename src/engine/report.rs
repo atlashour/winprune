@@ -17,6 +17,7 @@ pub struct Tally {
     pub done: usize,
     pub skipped: usize,
     pub blocked: usize,
+    pub deferred: usize,
     pub absent: usize,
     pub failed: usize,
 }
@@ -27,6 +28,7 @@ impl Tally {
             Outcome::Done => self.done += 1,
             Outcome::Skipped(_) => self.skipped += 1,
             Outcome::Blocked(_) => self.blocked += 1,
+            Outcome::Deferred(_) => self.deferred += 1,
             Outcome::Failed(_) => self.failed += 1,
         }
     }
@@ -41,6 +43,7 @@ pub struct ItemSummary {
     pub done: usize,
     pub skipped: usize,
     pub blocked: usize,
+    pub deferred: usize,
     pub failed: usize,
 }
 
@@ -60,7 +63,7 @@ pub struct Report {
 impl Report {
     pub fn new(plan: &Plan, dry_run: bool) -> Report {
         Report {
-            schema: 2,
+            schema: 3,
             version: env!("CARGO_PKG_VERSION"),
             started: timestamp(),
             dry_run,
@@ -75,6 +78,7 @@ impl Report {
                     done: 0,
                     skipped: 0,
                     blocked: 0,
+                    deferred: 0,
                     failed: 0,
                 })
                 .collect(),
@@ -89,6 +93,7 @@ impl Report {
                 Outcome::Done => item.done += 1,
                 Outcome::Skipped(_) => item.skipped += 1,
                 Outcome::Blocked(_) => item.blocked += 1,
+                Outcome::Deferred(_) => item.deferred += 1,
                 Outcome::Failed(_) => item.failed += 1,
             }
         }
@@ -106,6 +111,9 @@ impl Report {
             "{} done, {} skipped, {} blocked by Windows, {} absent or already done, {} failed",
             t.done, t.skipped, t.blocked, t.absent, t.failed
         );
+        if t.deferred > 0 {
+            s.push_str(&format!(", {} left for the next restart", t.deferred));
+        }
         if self.dry_run {
             s.push_str(" (dry run, nothing was changed)");
         }
@@ -119,6 +127,7 @@ fn serialize_outcome<S: serde::Serializer>(o: &Outcome, s: S) -> Result<S::Ok, S
         Outcome::Done => ("done", None),
         Outcome::Skipped(r) => ("skipped", Some(r.as_str())),
         Outcome::Blocked(r) => ("blocked", Some(r.as_str())),
+        Outcome::Deferred(r) => ("deferred", Some(r.as_str())),
         Outcome::Failed(r) => ("failed", Some(r.as_str())),
     };
     let mut st = s.serialize_struct("Outcome", 2)?;
@@ -156,6 +165,33 @@ pub fn file_stamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_results_count_apart_from_failures() {
+        let catalog = crate::catalog::Catalog::parse(
+            "t",
+            "[[item]]\nid = \"appx.demo\"\nname = \"Demo\"\ncategory = \"appx\"\nlevel = \"medium\"\nrisk = \"low\"\nsummary = \"x\"\n[[item.step]]\nkind = \"appx\"\npatterns = [\"*Demo*\"]\n",
+        )
+        .unwrap();
+        let plan = crate::engine::build_plan(
+            &catalog,
+            &crate::engine::Selection::level(Level::Medium),
+            22631,
+            true,
+            &crate::system::fake::Fake::default(),
+        );
+        let mut report = Report::new(&plan, false);
+        report.record(OpResult {
+            item: "appx.demo".into(),
+            op: "delete C:\\x".into(),
+            outcome: Outcome::Deferred("held by explorer.exe".into()),
+        });
+        assert_eq!(report.tally.deferred, 1);
+        assert_eq!(report.tally.failed, 0);
+        assert_eq!(report.items[0].deferred, 1);
+        assert!(report.summary().contains("1 left for the next restart"));
+        assert!(report.to_json().contains("\"status\": \"deferred\""));
+    }
 
     #[test]
     fn timestamp_looks_like_iso_8601() {

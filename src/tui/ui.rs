@@ -386,6 +386,7 @@ fn result_line(r: &crate::engine::OpResult) -> Line<'static> {
         Outcome::Done => ("  ok ", Color::Green, String::new()),
         Outcome::Skipped(why) => (" skip", WARN, format!("  ({why})")),
         Outcome::Blocked(why) => ("block", WARN, format!("  ({why})")),
+        Outcome::Deferred(why) => ("defer", WARN, format!("  ({why})")),
         Outcome::Failed(why) => (" FAIL", DANGER, format!("  ({why})")),
     };
     Line::from(vec![
@@ -424,6 +425,10 @@ fn draw_result(frame: &mut Frame, area: Rect, app: &App) {
             Span::raw("  blocked by Windows"),
         ]),
         Line::from(vec![
+            Span::styled(format!("{:>5}", t.deferred), Style::new().fg(WARN)),
+            Span::raw("  left for the next restart"),
+        ]),
+        Line::from(vec![
             Span::styled(format!("{:>5}", t.absent), Style::new().fg(DIM)),
             Span::raw("  absent or already done"),
         ]),
@@ -448,18 +453,28 @@ fn draw_result(frame: &mut Frame, area: Rect, app: &App) {
     let failed: Vec<Line> = report
         .results
         .iter()
-        .filter(|r| matches!(r.outcome, Outcome::Failed(_) | Outcome::Blocked(_)))
+        .filter(|r| {
+            matches!(
+                r.outcome,
+                Outcome::Failed(_) | Outcome::Blocked(_) | Outcome::Deferred(_)
+            )
+        })
         .map(result_line)
         .collect();
     if !failed.is_empty() {
         lines.push(Line::raw(""));
         lines.push(Line::from(Span::styled(
-            "Failed or blocked",
+            "Failed, blocked or left for the next restart",
             Style::new().fg(DANGER).bold(),
         )));
         lines.extend(failed);
     }
-    if !report.dry_run && t.done > 0 {
+    if t.deferred > 0 {
+        lines.push(Line::raw(""));
+        lines.push(Line::raw(
+            "Restart to let Windows finish the deletions it could not do now.",
+        ));
+    } else if !report.dry_run && t.done > 0 {
         lines.push(Line::raw(""));
         lines.push(Line::raw(
             "A restart is recommended before judging the result.",

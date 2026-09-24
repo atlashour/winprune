@@ -1,7 +1,9 @@
 use crate::system::{Outcome, PathInfo, SysError};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use windows::Win32::Storage::FileSystem::{MOVEFILE_DELAY_UNTIL_REBOOT, MoveFileExW};
+use windows::core::{HSTRING, PCWSTR};
 
 pub fn info(path: &Path) -> Result<Option<PathInfo>, SysError> {
     let meta = match fs::symlink_metadata(path) {
@@ -64,16 +66,56 @@ pub fn delete(path: &Path) -> Outcome {
     match result {
         Ok(()) => Outcome::Done,
         Err(e) => {
-            // A running executable inside the tree fails the whole delete with a bare
-            // access denied; say who it was.
+            // A running executable or a loaded DLL inside the tree fails the whole
+            // delete with a bare access denied. Say who it was and let Windows finish
+            // during the next restart, the way installers handle files in use.
             let holders = super::process::residents(path);
             if holders.is_empty() {
-                Outcome::Failed(e.to_string())
-            } else {
-                Outcome::Failed(format!("{e}; held by {}", holders.join(", ")))
+                return Outcome::Failed(e.to_string());
+            }
+            let held = format!("held by {}", holders.join(", "));
+            match schedule_at_restart(path) {
+                Ok(()) => Outcome::Deferred(held),
+                Err(why) => Outcome::Failed(format!(
+                    "{e}; {held}; could not schedule for the next restart: {why}"
+                )),
             }
         }
     }
+}
+
+/// Everything still under `tree`, children before parents, so the entries can be
+/// removed in that order.
+fn leftovers(tree: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(entries) = fs::read_dir(tree) {
+        for entry in entries.flatten() {
+            let is_dir = entry
+                .file_type()
+                .is_ok_and(|t| t.is_dir() && !t.is_symlink());
+            if is_dir {
+                out.extend(leftovers(&entry.path()));
+            } else {
+                out.push(entry.path());
+            }
+        }
+    }
+    out.push(tree.to_path_buf());
+    out
+}
+
+fn schedule_at_restart(tree: &Path) -> Result<(), String> {
+    for p in leftovers(tree) {
+        unsafe {
+            MoveFileExW(
+                &HSTRING::from(p.as_os_str()),
+                PCWSTR::null(),
+                MOVEFILE_DELAY_UNTIL_REBOOT,
+            )
+            .map_err(|e| format!("{}: {}", p.display(), e.message().trim()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -100,6 +142,15 @@ mod tests {
         child
     }
 
+    /// Elevated (CI runners are) the delete gets scheduled for the next restart,
+    /// unelevated it fails; both say who held the tree.
+    fn held_by(outcome: Outcome) -> String {
+        match outcome {
+            Outcome::Failed(why) | Outcome::Deferred(why) => why,
+            other => panic!("{other:?}"),
+        }
+    }
+
     #[test]
     fn delete_names_the_process_holding_the_tree() {
         let dir = std::env::temp_dir().join("winprune-test-holder");
@@ -108,12 +159,56 @@ mod tests {
         let _ = child.kill();
         let _ = child.wait();
         let _ = fs::remove_dir_all(&dir);
-        match outcome {
-            Outcome::Failed(why) => {
-                assert!(why.contains("held by winprune-holder.exe (pid "), "{why}")
-            }
-            other => panic!("{other:?}"),
+        let why = held_by(outcome);
+        assert!(why.contains("held by winprune-holder.exe (pid "), "{why}");
+    }
+
+    #[test]
+    fn delete_names_the_process_that_loaded_a_dll_from_the_tree() {
+        use windows::Win32::Foundation::FreeLibrary;
+        use windows::Win32::System::LibraryLoader::LoadLibraryW;
+        use windows::core::HSTRING;
+        let dir = std::env::temp_dir().join("winprune-test-module");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let system32 = Path::new(&std::env::var("SystemRoot").unwrap()).join("System32");
+        let dll = dir.join("winprune-module.dll");
+        fs::copy(system32.join("version.dll"), &dll).unwrap();
+        let module = unsafe { LoadLibraryW(&HSTRING::from(dll.as_os_str())) }.unwrap();
+        let outcome = delete(&dir);
+        unsafe {
+            let _ = FreeLibrary(module);
         }
+        let _ = fs::remove_dir_all(&dir);
+        let own = std::env::current_exe().unwrap();
+        let own = own.file_name().unwrap().to_string_lossy().to_string();
+        let expected = format!(
+            "held by {own} (pid {}) via winprune-module.dll",
+            std::process::id()
+        );
+        let why = held_by(outcome);
+        assert!(why.contains(&expected), "{why}");
+    }
+
+    #[test]
+    fn leftovers_are_listed_deepest_first() {
+        let dir = std::env::temp_dir().join("winprune-test-leftovers");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("a\\b")).unwrap();
+        fs::write(dir.join("a\\b\\deep.txt"), "x").unwrap();
+        fs::write(dir.join("top.txt"), "x").unwrap();
+        let listed = leftovers(&dir);
+        let _ = fs::remove_dir_all(&dir);
+        let position = |name: &str| {
+            listed
+                .iter()
+                .position(|p| p.file_name().unwrap() == name)
+                .unwrap_or_else(|| panic!("{name} missing from {listed:?}"))
+        };
+        assert!(position("deep.txt") < position("b"));
+        assert!(position("b") < position("a"));
+        assert!(position("a") < position("winprune-test-leftovers"));
+        assert!(position("top.txt") < position("winprune-test-leftovers"));
     }
 
     #[test]

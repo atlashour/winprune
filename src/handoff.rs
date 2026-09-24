@@ -67,14 +67,22 @@ pub fn read_report_summary(dir: &Path) -> Option<String> {
     let text = fs::read_to_string(dir.join(REPORT_FILE)).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     let t = value.get("tally")?;
-    Some(format!(
+    let count = |key: &str| t.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+    let mut s = format!(
         "{} done, {} skipped, {} blocked by Windows, {} absent or already done, {} failed",
         t.get("done")?.as_u64()?,
         t.get("skipped")?.as_u64()?,
-        t.get("blocked").and_then(|v| v.as_u64()).unwrap_or(0),
+        count("blocked"),
         t.get("absent")?.as_u64()?,
         t.get("failed")?.as_u64()?
-    ))
+    );
+    if count("deferred") > 0 {
+        s.push_str(&format!(
+            ", {} left for the next restart",
+            count("deferred")
+        ));
+    }
+    Some(s)
 }
 
 fn prepare(request: &Request) -> Result<(PathBuf, Vec<String>), String> {

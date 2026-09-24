@@ -144,6 +144,9 @@ pub enum Outcome {
     /// Windows refused the change by design (a kernel driver guarding the value, a
     /// protected service). Not a bug in the tool, not something a retry fixes.
     Blocked(String),
+    /// Something Windows itself keeps in use; the change is scheduled and Windows
+    /// finishes it during the next restart.
+    Deferred(String),
     Failed(String),
 }
 

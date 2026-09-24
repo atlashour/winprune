@@ -139,7 +139,7 @@ startup = "disabled"
         });
         assert_eq!(seen.len(), 2);
         assert!(report.dry_run);
-        assert!(report.to_json().contains("\"schema\": 2"));
+        assert!(report.to_json().contains("\"schema\": 3"));
         assert_eq!(report.items.len(), 1);
         assert_eq!(report.items[0].to_apply, 1);
         assert_eq!(report.items[0].done, 1);

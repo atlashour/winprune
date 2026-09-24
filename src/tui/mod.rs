@@ -176,6 +176,7 @@ fn describe(r: &OpResult) -> String {
         crate::system::Outcome::Done => format!("ok  {}  {}", r.item, r.op),
         crate::system::Outcome::Skipped(why) => format!("skip  {}  {} ({why})", r.item, r.op),
         crate::system::Outcome::Blocked(why) => format!("block  {}  {} ({why})", r.item, r.op),
+        crate::system::Outcome::Deferred(why) => format!("defer  {}  {} ({why})", r.item, r.op),
         crate::system::Outcome::Failed(why) => format!("FAIL  {}  {} ({why})", r.item, r.op),
     }
 }
