@@ -440,14 +440,15 @@ fn apply_command(
     }
 }
 
-fn confirm(prompt: &str) -> bool {
+fn prompt_line(prompt: &str) -> Option<String> {
     print!("{prompt}");
     let _ = io::stdout().flush();
     let mut answer = String::new();
-    if io::stdin().read_line(&mut answer).is_err() {
-        return false;
-    }
-    answer.trim().eq_ignore_ascii_case("yes")
+    io::stdin().read_line(&mut answer).ok().map(|_| answer)
+}
+
+fn confirm(prompt: &str) -> bool {
+    prompt_line(prompt).is_some_and(|a| a.trim().eq_ignore_ascii_case("yes"))
 }
 
 /// Keeps a window that exists only for us (double click, UAC relaunch) open until
@@ -457,10 +458,7 @@ fn hold_window_open() {
     if !os::owns_console() || !io::stdin().is_terminal() {
         return;
     }
-    print!("Press Enter to close.");
-    let _ = io::stdout().flush();
-    let mut answer = String::new();
-    let _ = io::stdin().read_line(&mut answer);
+    let _ = prompt_line("Press Enter to close.");
 }
 
 #[cfg(test)]
