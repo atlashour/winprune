@@ -655,13 +655,14 @@ fn plan_tasks(patterns: &[String], action: TaskAction, snap: &Snapshot, ops: &mu
     }
 }
 
+fn same_process(a: &str, b: &str) -> bool {
+    a.trim_end_matches(".exe")
+        .eq_ignore_ascii_case(b.trim_end_matches(".exe"))
+}
+
 fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     for name in processes {
-        let running = snap.processes.iter().any(|p| {
-            p.name
-                .trim_end_matches(".exe")
-                .eq_ignore_ascii_case(name.trim_end_matches(".exe"))
-        });
+        let running = snap.processes.iter().any(|p| same_process(&p.name, name));
         ops.push(Op::new(
             OpKind::Kill { name: name.clone() },
             if running {
@@ -728,22 +729,29 @@ pub fn expand_for_profile(raw: &str, folder: Option<&std::path::Path>) -> PathBu
 }
 
 /// A running executable inside a tree makes the whole delete fail with access denied,
-/// so the plan stops it first. Kills are by name, the way a `kill` step works.
+/// so the plan stops it first. Kills are by name, the way a `kill` step works, which
+/// is why a name matching this very executable is never planned: it would end the run.
 fn plan_kill_residents(tree: &Path, snap: &Snapshot, ops: &mut Vec<Op>) {
-    let mut names: Vec<&str> = Vec::new();
+    let own = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
     for p in &snap.processes {
-        if let Some(path) = &p.path
-            && lives_under(path, tree)
-            && !names.iter().any(|n| n.eq_ignore_ascii_case(&p.name))
+        let Some(path) = &p.path else {
+            continue;
+        };
+        let planned = ops
+            .iter()
+            .any(|o| matches!(&o.kind, OpKind::Kill { name } if same_process(name, &p.name)));
+        if !lives_under(path, tree)
+            || planned
+            || own.as_deref().is_some_and(|o| same_process(o, &p.name))
         {
-            names.push(&p.name);
+            continue;
         }
-    }
-    for name in names {
         ops.push(
             Op::new(
                 OpKind::Kill {
-                    name: name.to_string(),
+                    name: p.name.clone(),
                 },
                 OpState::WillApply,
             )
@@ -1102,6 +1110,68 @@ paths = ["C:\\OneDriveTemp"]
             .map(|o| o.kind.to_string())
             .collect();
         assert_eq!(ops, vec!["kill Resident.exe", "delete C:\\OneDriveTemp"]);
+    }
+
+    #[test]
+    fn delete_step_never_plans_a_kill_of_winprune_itself() {
+        // Kills are by name, so a copy of our own executable inside the tree would
+        // take this very process down with it.
+        let own = std::env::current_exe().unwrap();
+        let own = own.file_name().unwrap().to_string_lossy().to_string();
+        let catalog = Catalog::parse("t", DELETE_CATALOG).unwrap();
+        let sys = Fake::default()
+            .with_path("C:\\OneDriveTemp", 3, 300)
+            .with_process_at(&own, &format!("C:\\OneDriveTemp\\Desktop\\{own}"));
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let ops: Vec<String> = plan.items[0]
+            .ops
+            .iter()
+            .map(|o| o.kind.to_string())
+            .collect();
+        assert_eq!(ops, vec!["delete C:\\OneDriveTemp"]);
+    }
+
+    const KILL_THEN_DELETE_CATALOG: &str = r#"
+[[item]]
+id = "onedrive.temp"
+name = "Temp"
+category = "onedrive"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "kill"
+processes = ["Resident"]
+[[item.step]]
+kind = "delete"
+paths = ["C:\\OneDriveTemp"]
+"#;
+
+    #[test]
+    fn resident_kill_is_not_repeated_after_an_explicit_kill_step() {
+        let catalog = Catalog::parse("t", KILL_THEN_DELETE_CATALOG).unwrap();
+        let sys = Fake::default()
+            .with_path("C:\\OneDriveTemp", 3, 300)
+            .with_process_at("Resident.exe", "C:\\OneDriveTemp\\Resident.exe");
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let ops: Vec<String> = plan.items[0]
+            .ops
+            .iter()
+            .map(|o| o.kind.to_string())
+            .collect();
+        assert_eq!(ops, vec!["kill Resident", "delete C:\\OneDriveTemp"]);
     }
 
     const SCOPE_CATALOG: &str = r#"
