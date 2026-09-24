@@ -17,7 +17,15 @@ enum Progress {
     Done(Box<Report>),
 }
 
-pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> i32 {
+/// `notice` is shown on the first screen until a key is pressed: what happened
+/// before the TUI took over the window.
+pub fn run(
+    catalog: Catalog,
+    filter: Filter,
+    ctx: Context,
+    at_confirm: bool,
+    notice: Option<String>,
+) -> i32 {
     if !(std::io::stdin().is_terminal() && std::io::stdout().is_terminal()) {
         eprintln!(
             "winprune needs an interactive console for the TUI; from scripts use `winprune plan` or `winprune apply --level {} --yes`",
@@ -41,6 +49,7 @@ pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> 
         &sys,
     );
     let mut app = App::new(plan, selection, ctx.info, filter.catalog.clone());
+    app.notice = notice;
     if at_confirm {
         app.screen = Screen::Confirm;
     }
@@ -259,6 +268,15 @@ paths = ["%USERPROFILE%\\OneDrive"]
             screen.contains("remove package Microsoft.DemoApp"),
             "{screen}"
         );
+    }
+
+    #[test]
+    fn select_screen_shows_a_notice_until_a_key_is_pressed() {
+        let mut a = app(Level::Medium);
+        a.notice = Some("the UAC prompt was refused".to_string());
+        assert!(render(&a).contains("the UAC prompt was refused"));
+        press(&mut a, KeyCode::Down);
+        assert!(!render(&a).contains("the UAC prompt was refused"));
     }
 
     #[test]

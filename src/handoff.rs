@@ -84,13 +84,17 @@ fn prepare(request: &Request) -> Result<(PathBuf, Vec<String>), String> {
     Ok((dir, args))
 }
 
-/// Starts the elevated child and returns without waiting: the caller's window is
-/// about to close and the child has its own.
-pub fn start_elevated(request: &Request) -> Result<(), String> {
+/// Starts the elevated child and returns its run folder without waiting: the
+/// caller's window is about to close and the child has its own.
+pub fn start_elevated(request: &Request) -> Result<PathBuf, String> {
     let (dir, args) = prepare(request)?;
-    os::start_elevated(&args).inspect_err(|_| {
-        let _ = fs::remove_dir_all(&dir);
-    })
+    match os::start_elevated(&args) {
+        Ok(()) => Ok(dir),
+        Err(e) => {
+            let _ = fs::remove_dir_all(&dir);
+            Err(e)
+        }
+    }
 }
 
 /// Writes the request, runs the elevated child, prints what it reported and returns

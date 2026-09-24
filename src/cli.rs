@@ -187,15 +187,28 @@ pub fn run(cli: Cli) -> i32 {
             // and let the elevated window take over. A refused prompt keeps the
             // unelevated TUI in this window, which still plans and dry-runs.
             let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+            let mut notice = None;
             if wants_elevated_tui(ctx.info.elevated, os::owns_console() && interactive) {
                 let mut request = cli.filter.request(false, true);
                 request.interactive_sid = crate::system::windows::profiles::current_sid();
+                let mut log = Log::open(ctx.info.elevated);
                 match handoff::start_elevated(&request) {
-                    Ok(()) => return EXIT_OK,
-                    Err(e) => eprintln!("{e}; continuing without elevation"),
+                    Ok(dir) => {
+                        log.line(&format!(
+                            "handed over to an elevated window, run folder {}",
+                            dir.display()
+                        ));
+                        return EXIT_OK;
+                    }
+                    Err(e) => {
+                        log.line(&format!("{e}; continuing without elevation"));
+                        notice = Some(format!(
+                            "{e}. Plan and dry run work without elevation, applying asks again."
+                        ));
+                    }
                 }
             }
-            let code = crate::tui::run(catalog, cli.filter, ctx, false);
+            let code = crate::tui::run(catalog, cli.filter, ctx, false, notice);
             hold_window_open();
             code
         }
@@ -250,7 +263,7 @@ fn run_request(request: Request, dir: PathBuf, info: os::OsInfo) -> i32 {
         run_dir: Some(dir),
     };
     if request.tui {
-        crate::tui::run(catalog, filter, ctx, request.at_confirm)
+        crate::tui::run(catalog, filter, ctx, request.at_confirm, None)
     } else {
         apply_command(&catalog, &filter, &ctx, request.dry_run, true)
     }

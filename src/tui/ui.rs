@@ -68,6 +68,13 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
+    if matches!(app.screen, Screen::Select)
+        && let Some(notice) = &app.notice
+    {
+        let style = Style::new().fg(Color::Black).bg(WARN);
+        frame.render_widget(Paragraph::new(format!(" {notice}")).style(style), area);
+        return;
+    }
     let text = match app.screen {
         Screen::Select if app.editing_filter => format!(" filter: {}_   (Enter keep, Esc clear)", app.filter),
         Screen::Select => {
