@@ -157,13 +157,15 @@ pub fn run(cli: Cli) -> i32 {
 
     // The elevated copy takes its whole configuration from the request file.
     if let Some(dir) = cli.filter.run_dir.clone() {
-        return match handoff::read_request(&dir) {
+        let code = match handoff::read_request(&dir) {
             Ok(request) => run_request(request, dir, info),
             Err(e) => {
                 eprintln!("{e}");
                 EXIT_USAGE
             }
         };
+        hold_window_open();
+        return code;
     }
 
     let catalog = match load_catalog(cli.filter.catalog.as_ref()) {
@@ -193,7 +195,9 @@ pub fn run(cli: Cli) -> i32 {
                     Err(e) => eprintln!("{e}; continuing without elevation"),
                 }
             }
-            crate::tui::run(catalog, cli.filter, ctx, false)
+            let code = crate::tui::run(catalog, cli.filter, ctx, false);
+            hold_window_open();
+            code
         }
         Some(Command::Catalog { what }) => catalog_command(&catalog, what),
         Some(Command::Plan { json, all }) => {
@@ -438,8 +442,9 @@ fn confirm(prompt: &str) -> bool {
 }
 
 /// Keeps a window that exists only for us (double click, UAC relaunch) open until
-/// the user has read what is on it.
-pub fn hold_window_open() {
+/// the user has read what is on it. Called only where a window was opened for a
+/// person; a script that lands in a fresh console must not be held.
+fn hold_window_open() {
     if !os::owns_console() || !io::stdin().is_terminal() {
         return;
     }
