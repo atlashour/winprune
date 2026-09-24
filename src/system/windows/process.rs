@@ -1,6 +1,6 @@
 use crate::system::{Outcome, ProcessInfo, SysError, lives_under};
 use std::path::{Path, PathBuf};
-use windows::Win32::Foundation::CloseHandle;
+use windows::Win32::Foundation::{CloseHandle, ERROR_BAD_LENGTH};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, MODULEENTRY32W, Module32FirstW, Module32NextW, PROCESSENTRY32W,
     Process32FirstW, Process32NextW, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
@@ -81,8 +81,19 @@ pub fn running() -> Result<Vec<ProcessInfo>, SysError> {
 fn modules(pid: u32) -> Vec<PathBuf> {
     let mut out = Vec::new();
     unsafe {
-        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
-        else {
+        let mut snap = None;
+        for _ in 0..8 {
+            match CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid) {
+                Ok(h) => {
+                    snap = Some(h);
+                    break;
+                }
+                // Documented as transient for module snapshots: retry until it works.
+                Err(e) if e.code() == ERROR_BAD_LENGTH.to_hresult() => continue,
+                Err(_) => break,
+            }
+        }
+        let Some(snap) = snap else {
             return out;
         };
         let mut entry = MODULEENTRY32W {

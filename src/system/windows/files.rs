@@ -85,34 +85,58 @@ pub fn delete(path: &Path) -> Outcome {
 }
 
 /// Everything still under `tree`, children before parents, so the entries can be
-/// removed in that order.
-fn leftovers(tree: &Path) -> Vec<PathBuf> {
+/// removed in that order. A folder that cannot be listed is an error: queued as it
+/// is, it would survive the restart together with every ancestor.
+fn leftovers(tree: &Path) -> Result<Vec<PathBuf>, String> {
+    let describe = |e: std::io::Error| format!("{}: {e}", tree.display());
+    let meta = fs::symlink_metadata(tree).map_err(describe)?;
     let mut out = Vec::new();
-    if let Ok(entries) = fs::read_dir(tree) {
-        for entry in entries.flatten() {
+    if meta.is_dir() && !meta.is_symlink() {
+        for entry in fs::read_dir(tree).map_err(describe)? {
+            let entry = entry.map_err(describe)?;
             let is_dir = entry
                 .file_type()
                 .is_ok_and(|t| t.is_dir() && !t.is_symlink());
             if is_dir {
-                out.extend(leftovers(&entry.path()));
+                out.extend(leftovers(&entry.path())?);
             } else {
                 out.push(entry.path());
             }
         }
     }
     out.push(tree.to_path_buf());
-    out
+    Ok(out)
 }
 
+/// Paths past MAX_PATH need the verbatim prefix for MoveFileExW.
+fn verbatim(p: &Path) -> PathBuf {
+    let text = p.to_string_lossy();
+    if text.starts_with(r"\\?\") || !p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        PathBuf::from(format!(r"\\?\{text}"))
+    }
+}
+
+/// Queues the whole tree; stops at the first refusal and says how much was already
+/// queued, since Windows will still delete that part at the restart.
 fn schedule_at_restart(tree: &Path) -> Result<(), String> {
-    for p in leftovers(tree) {
+    let entries = leftovers(tree)?;
+    for (queued, p) in entries.iter().enumerate() {
         unsafe {
             MoveFileExW(
-                &HSTRING::from(p.as_os_str()),
+                &HSTRING::from(verbatim(p).as_os_str()),
                 PCWSTR::null(),
                 MOVEFILE_DELAY_UNTIL_REBOOT,
             )
-            .map_err(|e| format!("{}: {}", p.display(), e.message().trim()))?;
+            .map_err(|e| {
+                format!(
+                    "{}: {} ({queued} of {} entries were queued before it)",
+                    p.display(),
+                    e.message().trim(),
+                    entries.len()
+                )
+            })?;
         }
     }
     Ok(())
@@ -197,7 +221,7 @@ mod tests {
         fs::create_dir_all(dir.join("a\\b")).unwrap();
         fs::write(dir.join("a\\b\\deep.txt"), "x").unwrap();
         fs::write(dir.join("top.txt"), "x").unwrap();
-        let listed = leftovers(&dir);
+        let listed = leftovers(&dir).unwrap();
         let _ = fs::remove_dir_all(&dir);
         let position = |name: &str| {
             listed
@@ -209,6 +233,33 @@ mod tests {
         assert!(position("b") < position("a"));
         assert!(position("a") < position("winprune-test-leftovers"));
         assert!(position("top.txt") < position("winprune-test-leftovers"));
+    }
+
+    /// Queued as is, a folder we cannot list would survive the restart together with
+    /// every ancestor while the report promised the opposite.
+    #[test]
+    fn leftovers_refuse_a_subfolder_that_cannot_be_listed() {
+        let dir = std::env::temp_dir().join("winprune-test-denied");
+        let locked = dir.join("locked");
+        let user = std::env::var("USERNAME").unwrap();
+        let icacls = |args: &[&str]| {
+            Command::new("icacls")
+                .arg(&locked)
+                .args(args)
+                .stdout(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        let _ = icacls(&["/remove:d", &user]);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(locked.join("secret.txt"), "x").unwrap();
+        assert!(icacls(&["/deny", &format!("{user}:(RX)")]));
+        let result = leftovers(&dir);
+        assert!(icacls(&["/remove:d", &user]));
+        let _ = fs::remove_dir_all(&dir);
+        assert!(result.is_err(), "{result:?}");
     }
 
     #[test]
