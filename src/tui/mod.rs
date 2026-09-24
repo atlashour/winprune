@@ -46,7 +46,7 @@ pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> 
     }
 
     let mut terminal = ratatui::init();
-    let code = event_loop(&mut terminal, &mut app, &ctx);
+    let code = event_loop(&mut terminal, &mut app, &ctx, at_confirm);
     ratatui::restore();
     trace.line(&format!("tui exit code {code}"));
     if code == EXIT_USAGE {
@@ -64,7 +64,12 @@ pub fn run(catalog: Catalog, filter: Filter, ctx: Context, at_confirm: bool) -> 
     code
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App, ctx: &Context) -> i32 {
+fn event_loop(
+    terminal: &mut ratatui::DefaultTerminal,
+    app: &mut App,
+    ctx: &Context,
+    at_confirm: bool,
+) -> i32 {
     let mut worker: Option<mpsc::Receiver<Progress>> = None;
     let mut log: Option<Log> = None;
     loop {
@@ -109,14 +114,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App, ctx: &Cont
         }
         match app.handle(key) {
             Action::None => {}
-            Action::Quit => {
-                return match &app.report {
-                    Some(r) if r.tally.failed > 0 => EXIT_FAILURES,
-                    Some(_) => EXIT_OK,
-                    None if ctx.run_dir.is_some() => EXIT_ABORTED,
-                    None => EXIT_OK,
-                };
-            }
+            Action::Quit => return exit_code_on_quit(app.report.as_ref(), at_confirm),
             Action::RelaunchElevated => {
                 ratatui::restore();
                 let mut request = app.request();
@@ -153,6 +151,17 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App, ctx: &Cont
     }
 }
 
+/// A selection handed over for confirmation has a launcher waiting for its report,
+/// so leaving without one is an abort. Quitting a TUI that started at Select is not.
+fn exit_code_on_quit(report: Option<&Report>, at_confirm: bool) -> i32 {
+    match report {
+        Some(r) if r.tally.failed > 0 => EXIT_FAILURES,
+        Some(_) => EXIT_OK,
+        None if at_confirm => EXIT_ABORTED,
+        None => EXIT_OK,
+    }
+}
+
 fn describe(r: &OpResult) -> String {
     match &r.outcome {
         crate::system::Outcome::Done => format!("ok  {}  {}", r.item, r.op),
@@ -165,8 +174,9 @@ fn describe(r: &OpResult) -> String {
 #[cfg(test)]
 mod tests {
     use super::app::{App, Screen};
-    use super::ui;
+    use super::{exit_code_on_quit, ui};
     use crate::catalog::{Catalog, Level};
+    use crate::cli::{EXIT_ABORTED, EXIT_OK};
     use crate::engine::{Selection, build_plan};
     use crate::os::OsInfo;
     use crate::system::fake::Fake;
@@ -231,6 +241,12 @@ paths = ["%USERPROFILE%\\OneDrive"]
 
     fn press(app: &mut App, code: KeyCode) {
         app.handle(KeyEvent::from(code));
+    }
+
+    #[test]
+    fn quitting_without_a_report_only_aborts_a_handed_over_selection() {
+        assert_eq!(exit_code_on_quit(None, false), EXIT_OK);
+        assert_eq!(exit_code_on_quit(None, true), EXIT_ABORTED);
     }
 
     #[test]
