@@ -7,8 +7,8 @@ mod services;
 mod tasks;
 
 use super::{
-    Apply, AppxPackage, Inspect, Outcome, PathInfo, Provisioned, RegRoot, RegValue, ServiceInfo,
-    SysError, TaskInfo, UserProfile,
+    Apply, AppxPackage, Inspect, Outcome, PathInfo, ProcessInfo, Provisioned, RegRoot, RegValue,
+    ServiceInfo, SysError, TaskInfo, UserProfile,
 };
 use crate::catalog::Startup;
 use profiles::DefaultMount;
@@ -96,7 +96,7 @@ impl Inspect for WindowsSystem {
         tasks::list()
     }
 
-    fn running_processes(&self) -> Result<Vec<String>, SysError> {
+    fn running_processes(&self) -> Result<Vec<ProcessInfo>, SysError> {
         process::running()
     }
 

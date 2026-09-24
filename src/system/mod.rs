@@ -35,6 +35,21 @@ pub struct TaskInfo {
     pub enabled: bool,
 }
 
+/// A running process. `path` is the executable image, `None` when the process could
+/// not be opened (protected or system processes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessInfo {
+    pub name: String,
+    pub path: Option<PathBuf>,
+}
+
+/// Whether `path` is inside `tree`, by whole components. Windows paths compare
+/// case-insensitively; `Path::starts_with` does not.
+pub fn lives_under(path: &Path, tree: &Path) -> bool {
+    let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_ascii_lowercase());
+    lower(path).starts_with(lower(tree))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PathInfo {
     pub files: u64,
@@ -111,7 +126,7 @@ pub trait Inspect {
         name: &str,
     ) -> Result<Option<RegValue>, SysError>;
     fn tasks(&self) -> Result<Vec<TaskInfo>, SysError>;
-    fn running_processes(&self) -> Result<Vec<String>, SysError>;
+    fn running_processes(&self) -> Result<Vec<ProcessInfo>, SysError>;
     fn path_info(&self, path: &Path) -> Result<Option<PathInfo>, SysError>;
     /// Every account with a profile folder, loaded or not.
     fn user_profiles(&self) -> Result<Vec<UserProfile>, SysError>;

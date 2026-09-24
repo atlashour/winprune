@@ -1,8 +1,8 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use super::{
-    AppxPackage, Inspect, PathInfo, Provisioned, RegRoot, RegValue, ServiceInfo, SysError,
-    TaskInfo, UserProfile,
+    AppxPackage, Inspect, PathInfo, ProcessInfo, Provisioned, RegRoot, RegValue, ServiceInfo,
+    SysError, TaskInfo, UserProfile,
 };
 use crate::catalog::Startup;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ pub struct Fake {
     services: HashMap<String, ServiceInfo>,
     registry: HashMap<(String, String, String), RegValue>,
     tasks: Vec<TaskInfo>,
-    processes: Vec<String>,
+    processes: Vec<ProcessInfo>,
     paths: HashMap<PathBuf, PathInfo>,
     profiles: Vec<UserProfile>,
     interactive: Option<String>,
@@ -70,7 +70,18 @@ impl Fake {
     }
 
     pub fn with_process(mut self, name: &str) -> Self {
-        self.processes.push(name.to_string());
+        self.processes.push(ProcessInfo {
+            name: name.to_string(),
+            path: None,
+        });
+        self
+    }
+
+    pub fn with_process_at(mut self, name: &str, path: &str) -> Self {
+        self.processes.push(ProcessInfo {
+            name: name.to_string(),
+            path: Some(PathBuf::from(path)),
+        });
         self
     }
 
@@ -133,7 +144,7 @@ impl Inspect for Fake {
         Ok(self.tasks.clone())
     }
 
-    fn running_processes(&self) -> Result<Vec<String>, SysError> {
+    fn running_processes(&self) -> Result<Vec<ProcessInfo>, SysError> {
         Ok(self.processes.clone())
     }
 

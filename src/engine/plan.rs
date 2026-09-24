@@ -2,11 +2,14 @@ use super::expand_env;
 use crate::catalog::{
     Catalog, Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction,
 };
-use crate::system::{AppxPackage, Inspect, Provisioned, RegRoot, RegValue, TaskInfo, UserProfile};
+use crate::system::{
+    AppxPackage, Inspect, ProcessInfo, Provisioned, RegRoot, RegValue, TaskInfo, UserProfile,
+    lives_under,
+};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Selection {
@@ -301,7 +304,7 @@ struct Snapshot {
     packages: Vec<AppxPackage>,
     provisioned: Provisioned,
     tasks: Vec<TaskInfo>,
-    processes: Vec<String>,
+    processes: Vec<ProcessInfo>,
     profiles: Vec<UserProfile>,
     interactive: Option<UserProfile>,
     default_profile: Option<PathBuf>,
@@ -423,6 +426,7 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                         paths,
                         folder.as_deref(),
                         &who,
+                        snap,
                         sys,
                         &mut ops,
                         &mut live_notes,
@@ -654,7 +658,8 @@ fn plan_tasks(patterns: &[String], action: TaskAction, snap: &Snapshot, ops: &mu
 fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     for name in processes {
         let running = snap.processes.iter().any(|p| {
-            p.trim_end_matches(".exe")
+            p.name
+                .trim_end_matches(".exe")
                 .eq_ignore_ascii_case(name.trim_end_matches(".exe"))
         });
         ops.push(Op::new(
@@ -722,10 +727,36 @@ pub fn expand_for_profile(raw: &str, folder: Option<&std::path::Path>) -> PathBu
     PathBuf::from(expand_env(&replaced))
 }
 
+/// A running executable inside a tree makes the whole delete fail with access denied,
+/// so the plan stops it first. Kills are by name, the way a `kill` step works.
+fn plan_kill_residents(tree: &Path, snap: &Snapshot, ops: &mut Vec<Op>) {
+    let mut names: Vec<&str> = Vec::new();
+    for p in &snap.processes {
+        if let Some(path) = &p.path
+            && lives_under(path, tree)
+            && !names.iter().any(|n| n.eq_ignore_ascii_case(&p.name))
+        {
+            names.push(&p.name);
+        }
+    }
+    for name in names {
+        ops.push(
+            Op::new(
+                OpKind::Kill {
+                    name: name.to_string(),
+                },
+                OpState::WillApply,
+            )
+            .with_detail(format!("runs from {}", tree.display())),
+        );
+    }
+}
+
 fn plan_delete(
     paths: &[String],
     folder: Option<&std::path::Path>,
     who: &str,
+    snap: &Snapshot,
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
     notes: &mut Vec<String>,
@@ -734,6 +765,7 @@ fn plan_delete(
         let path = expand_for_profile(raw, folder);
         match sys.path_info(&path) {
             Ok(Some(info)) => {
+                plan_kill_residents(&path, snap, ops);
                 if info.files > 0 {
                     notes.push(format!(
                         "{} holds {} files ({}).",
@@ -1034,6 +1066,42 @@ processes = ["DemoApp", "Ghost"]
                 OpState::Absent
             ]
         );
+    }
+
+    const DELETE_CATALOG: &str = r#"
+[[item]]
+id = "onedrive.temp"
+name = "Temp"
+category = "onedrive"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "delete"
+paths = ["C:\\OneDriveTemp"]
+"#;
+
+    #[test]
+    fn delete_step_stops_processes_running_from_the_tree_first() {
+        let catalog = Catalog::parse("t", DELETE_CATALOG).unwrap();
+        let sys = Fake::default()
+            .with_path("C:\\OneDriveTemp", 3, 300)
+            .with_process_at("Resident.exe", "c:\\onedrivetemp\\bin\\Resident.exe")
+            .with_process_at("Neighbour.exe", "C:\\OneDriveTempX\\Neighbour.exe")
+            .with_process("Elsewhere.exe");
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let ops: Vec<String> = plan.items[0]
+            .ops
+            .iter()
+            .map(|o| o.kind.to_string())
+            .collect();
+        assert_eq!(ops, vec!["kill Resident.exe", "delete C:\\OneDriveTemp"]);
     }
 
     const SCOPE_CATALOG: &str = r#"
