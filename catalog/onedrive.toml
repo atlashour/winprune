@@ -11,7 +11,7 @@ warning = "Sync stops. Files already downloaded stay in the OneDrive folder; fil
 
 [[item.step]]
 kind = "kill"
-processes = ["OneDrive", "FileCoAuth"]
+processes = ["OneDrive", "OneDrive.Sync.Service", "FileCoAuth"]
 
 [[item.step]]
 kind = "run"
