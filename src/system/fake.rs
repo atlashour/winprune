@@ -20,6 +20,7 @@ pub struct Fake {
     paths: HashMap<PathBuf, PathInfo>,
     profiles: Vec<UserProfile>,
     interactive: Option<String>,
+    unreadable: Vec<String>,
 }
 
 impl Fake {
@@ -105,6 +106,13 @@ impl Fake {
         self.interactive = Some(sid.to_string());
         self
     }
+
+    /// Every read under `root` fails, the way the Default profile hive does without
+    /// elevation.
+    pub fn unreadable(mut self, root: &RegRoot) -> Self {
+        self.unreadable.push(root.to_string());
+        self
+    }
 }
 
 fn key(root: &RegRoot, path: &str, name: &str) -> (String, String, String) {
@@ -137,6 +145,9 @@ impl Inspect for Fake {
         path: &str,
         name: &str,
     ) -> Result<Option<RegValue>, SysError> {
+        if self.unreadable.contains(&root.to_string()) {
+            return Err(SysError::NotLoaded);
+        }
         Ok(self.registry.get(&key(root, path, name)).cloned())
     }
 

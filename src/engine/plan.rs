@@ -150,6 +150,9 @@ pub struct Op {
     pub state: OpState,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub detail: String,
+    /// The current state could not be read, so `state` is a guess that lets apply try.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unverified: bool,
 }
 
 impl Op {
@@ -158,11 +161,17 @@ impl Op {
             kind,
             state,
             detail: String::new(),
+            unverified: false,
         }
     }
 
     fn with_detail(mut self, detail: impl Into<String>) -> Op {
         self.detail = detail.into();
+        self
+    }
+
+    fn unverified(mut self, unverified: bool) -> Op {
+        self.unverified = unverified;
         self
     }
 }
@@ -541,7 +550,9 @@ fn plan_services(names: &[String], startup: Startup, sys: &dyn Inspect, ops: &mu
             }
             Ok(None) => ops.push(Op::new(kind, OpState::Absent)),
             Err(e) => ops.push(
-                Op::new(kind, OpState::WillApply).with_detail(format!("could not inspect: {e}")),
+                Op::new(kind, OpState::WillApply)
+                    .with_detail(format!("could not inspect: {e}"))
+                    .unverified(true),
             ),
         }
     }
@@ -578,6 +589,7 @@ fn plan_registry(
                 },
                 state,
             )
+            .unverified(unreadable.is_some())
             .with_detail(unreadable.unwrap_or_default()),
         );
         return;
@@ -596,6 +608,7 @@ fn plan_registry(
     } else {
         OpState::WillApply
     };
+    let unverified = unreadable.is_some();
     let detail = match (current, unreadable) {
         (Some(v), _) => format!("currently {}", show_value(&v)),
         (None, Some(why)) => why,
@@ -611,7 +624,8 @@ fn plan_registry(
             },
             state,
         )
-        .with_detail(detail),
+        .with_detail(detail)
+        .unverified(unverified),
     );
 }
 
@@ -793,7 +807,8 @@ fn plan_delete(
             Ok(None) => ops.push(Op::new(OpKind::Delete { path }, OpState::Absent)),
             Err(e) => ops.push(
                 Op::new(OpKind::Delete { path }, OpState::WillApply)
-                    .with_detail(format!("{who}: could not inspect: {e}")),
+                    .with_detail(format!("{who}: could not inspect: {e}"))
+                    .unverified(true),
             ),
         }
     }
@@ -1006,6 +1021,29 @@ value = 1
             &sys,
         );
         assert_eq!(plan.items[3].ops[0].state, OpState::AlreadyDone);
+    }
+
+    #[test]
+    fn unreadable_registry_value_is_planned_but_unverified() {
+        let sys = Fake::default().unreadable(&RegRoot::Machine);
+        let plan = build_plan(
+            &catalog(),
+            &Selection::level(Level::Medium),
+            22631,
+            false,
+            &sys,
+        );
+        let op = &plan.items[3].ops[0];
+        assert_eq!(op.state, OpState::WillApply);
+        assert!(op.unverified);
+        let readable = build_plan(
+            &catalog(),
+            &Selection::level(Level::Medium),
+            22631,
+            false,
+            &Fake::default(),
+        );
+        assert!(!readable.items[3].ops[0].unverified);
     }
 
     #[test]
