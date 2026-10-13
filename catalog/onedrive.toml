@@ -7,7 +7,7 @@ category = "onedrive"
 level = "high"
 risk = "medium"
 summary = "Stops OneDrive, runs the official uninstaller, removes leftovers in every profile and in ProgramData, the autostart and first-sign-in setup entries, the Explorer sidebar entry and the update tasks, then blocks it by policy."
-warning = "Sync stops. Files already downloaded stay in the OneDrive folder; files marked online-only become unavailable until OneDrive is reinstalled."
+warning = "Sync stops. Files already downloaded stay in the OneDrive folder; files marked online-only become unavailable until OneDrive is reinstalled. A per-machine install is reported, not removed."
 
 [[item.step]]
 kind = "kill"
@@ -19,13 +19,26 @@ candidates = ["%SystemRoot%\\SysWOW64\\OneDriveSetup.exe", "%SystemRoot%\\System
 args = ["/uninstall"]
 # 0x8004069B: the setup found no OneDrive to uninstall for this account.
 skip_exit_codes = [-2147219813]
-# OneDriveSetup.exe stays in the system folder after uninstalling, so its presence
-# says nothing; the client itself does. Per-user installs live in LocalAppData,
-# per-machine installs (/allusers) under Program Files.
-when_present = [
-    "%LOCALAPPDATA%\\Microsoft\\OneDrive\\OneDrive.exe",
-    "%ProgramFiles%\\Microsoft OneDrive\\OneDrive.exe",
-    "%ProgramFiles(x86)%\\Microsoft OneDrive\\OneDrive.exe",
+# OneDriveSetup.exe stays in the system folder after uninstalling, so its presence says
+# nothing. The client files cannot tell either: the delete step below removes them, so
+# a failed uninstall would then look done. These values are what a per-user install
+# keeps registered; after an uninstall the Uninstall entry is gone and the OneDrive key
+# loses Version (seen on 26300). The uninstaller acts for the account that runs it,
+# hence the user scope.
+when_registered = [
+    { hive = "hkcu", path = "Software\\Microsoft\\OneDrive", name = "Version" },
+    { hive = "hkcu", path = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OneDriveSetup.exe", name = "UninstallString" },
+]
+
+# A per-machine install (OneDriveSetup.exe /allusers), detected the way Microsoft does:
+# https://learn.microsoft.com/sharepoint/per-machine-installation
+# Microsoft documents no way to uninstall it, so it is reported and left in place.
+[[item.step]]
+kind = "unsupported"
+reason = "OneDrive is installed for all users (per-machine); winprune does not remove that install"
+when_registered = [
+    { hive = "hklm", path = "SOFTWARE\\Microsoft\\OneDrive", name = "Version" },
+    { hive = "hklm", path = "SOFTWARE\\WOW6432Node\\Microsoft\\OneDrive", name = "Version" },
 ]
 
 [[item.step]]

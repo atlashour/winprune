@@ -1,5 +1,5 @@
 use crate::catalog::{Catalog, Level};
-use crate::engine::{self, Diff, Log, OpState, Plan, Selection};
+use crate::engine::{self, Diff, Log, OpState, Plan, Selection, count};
 use crate::handoff::{self, Request};
 use crate::os;
 use crate::system::Outcome;
@@ -384,14 +384,14 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
     let _ = writeln!(
         out,
         "\n{} selected, {} to apply",
-        count(selected, "item", "items"),
-        count(plan.will_apply_count(), "operation", "operations")
+        count(selected as u64, "item", "items"),
+        count(plan.will_apply_count() as u64, "operation", "operations")
     );
     if unread > 0 {
         let _ = writeln!(
             out,
             "{} could not be fully inspected{}",
-            count(unread, "item", "items"),
+            count(unread as u64, "item", "items"),
             if plan.elevated {
                 ""
             } else {
@@ -400,10 +400,6 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
         );
     }
     out
-}
-
-fn count(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 pub fn render_diff(diff: &Diff, all: bool) -> String {
@@ -445,14 +441,14 @@ pub fn render_diff(diff: &Diff, all: bool) -> String {
             let _ = writeln!(
                 out,
                 "             {} could not be read",
-                count(item.unverified.len(), "operation", "operations")
+                count(item.unverified.len() as u64, "operation", "operations")
             );
         }
     }
     let c = diff.counts;
     let _ = writeln!(
         out,
-        "\n{} pending, {} applied, {} applied where readable, {} unknown, {} blocked by Windows, {} absent, {} not for this build",
+        "\n{} pending, {} applied, {} applied where readable, {} unknown, {} blocked, {} absent, {} not for this build",
         c.pending, c.applied, c.unconfirmed, c.unverified, c.blocked, c.absent, c.not_applicable
     );
     if c.unverified + c.unconfirmed > 0 && !diff.elevated {

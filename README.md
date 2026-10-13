@@ -110,10 +110,13 @@ kind = "appx"
 patterns = ["*OldVendor*"]
 ```
 
-Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`. Registry
-and delete steps under a user profile take `scope = "user" | "all-users" |
-"default-profile"`. A `run` step can list in `when_present` what it removes; once
-none of it is left, the step counts as done and is not run again. See the files under `catalog/` for the shape of each.
+Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`,
+`unsupported`. Registry and delete steps under a user profile take `scope = "user" |
+"all-users" | "default-profile"`. A `run` step can list in `when_registered` the
+registry values the software it removes keeps while installed; once none is present,
+the step counts as done and is not run again. An `unsupported` step names something
+winprune leaves in place and reports it while its values are present. See the files
+under `catalog/` for the shape of each.
 `winprune catalog validate --catalog my.toml` checks an overlay.
 
 ## Build

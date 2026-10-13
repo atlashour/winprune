@@ -17,7 +17,7 @@ pub enum ItemStatus {
     Unverified,
     /// Every target is already in the wanted state.
     Applied,
-    /// Nothing left to apply, but parts Windows will not let go of remain.
+    /// Nothing left to apply, but parts Windows keeps or winprune does not remove remain.
     Blocked,
     /// Nothing the item acts on exists here: removed earlier or never shipped.
     Absent,

@@ -1,4 +1,4 @@
-use super::model::{Hive, Item, Level, Risk, Scope, Step};
+use super::model::{Hive, Item, Level, RegProbe, Risk, Scope, Step};
 use std::collections::HashSet;
 
 /// Roots a `delete` step may point at. Anything outside is a catalog bug, not a policy
@@ -119,10 +119,27 @@ fn check_step(step: &Step) -> Vec<String> {
                 problems.push("kill step without processes".into());
             }
         }
-        Step::Run { candidates, .. } => {
+        Step::Run {
+            candidates,
+            when_registered,
+            ..
+        } => {
             if candidates.is_empty() {
                 problems.push("run step without candidates".into());
             }
+            check_probes(when_registered, &mut problems);
+        }
+        Step::Unsupported {
+            when_registered,
+            reason,
+        } => {
+            if when_registered.is_empty() {
+                problems.push("unsupported step without when_registered".into());
+            }
+            if reason.trim().is_empty() {
+                problems.push("unsupported step without a reason".into());
+            }
+            check_probes(when_registered, &mut problems);
         }
         Step::Delete { paths, scope } => {
             if paths.is_empty() {
@@ -145,6 +162,17 @@ fn check_step(step: &Step) -> Vec<String> {
         }
     }
     problems
+}
+
+fn check_probes(probes: &[RegProbe], problems: &mut Vec<String>) {
+    for probe in probes {
+        if probe.path.trim().is_empty() || probe.name.trim().is_empty() {
+            problems.push("when_registered needs path and name".into());
+        }
+        if probe.scope != Scope::User && probe.hive != Hive::Hkcu {
+            problems.push("scope is only meaningful with hive = \"hkcu\"".into());
+        }
+    }
 }
 
 fn is_profile_path(upper: &str) -> bool {

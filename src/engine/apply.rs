@@ -20,7 +20,10 @@ pub fn apply_plan(
                     report.tally.absent += 1;
                     continue;
                 }
-                OpState::NonRemovable => Outcome::Skipped("part of Windows".into()),
+                OpState::NonRemovable => Outcome::Skipped(match &op.kind {
+                    OpKind::Unsupported { reason } => reason.clone(),
+                    _ => "part of Windows".into(),
+                }),
                 OpState::NeedsElevation => Outcome::Skipped("needs elevation".into()),
             };
             let result = OpResult {
@@ -57,9 +60,10 @@ fn run_op(kind: &OpKind, sys: &mut dyn Apply) -> Outcome {
             skip_exit_codes,
         } => sys.run(exe, args, skip_exit_codes),
         OpKind::Delete { path } => sys.delete_path(path),
-        OpKind::PackagePattern { .. } | OpKind::TaskPattern { .. } | OpKind::OtherProfiles => {
-            Outcome::Skipped("nothing to apply".into())
-        }
+        OpKind::PackagePattern { .. }
+        | OpKind::TaskPattern { .. }
+        | OpKind::OtherProfiles
+        | OpKind::Unsupported { .. } => Outcome::Skipped("nothing to apply".into()),
     }
 }
 

@@ -213,17 +213,33 @@ pub enum Step {
         /// Exit codes that mean "nothing to do" rather than failure.
         #[serde(default)]
         skip_exit_codes: Vec<i32>,
-        /// What the command removes. When none of these exists in any profile or on
-        /// the machine, the run is already done; an uninstaller that stays on disk
-        /// after uninstalling cannot tell us that on its own.
+        /// Values the software the command removes keeps registered while installed.
+        /// When none is present the run is already done; an uninstaller that stays on
+        /// disk after uninstalling cannot tell us that on its own.
         #[serde(default)]
-        when_present: Vec<String>,
+        when_registered: Vec<RegProbe>,
     },
     Delete {
         paths: Vec<String>,
         #[serde(default)]
         scope: Scope,
     },
+    /// Something winprune does not remove, reported while any probe is present.
+    Unsupported {
+        when_registered: Vec<RegProbe>,
+        reason: String,
+    },
+}
+
+/// A registry value whose presence says something is installed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegProbe {
+    pub hive: Hive,
+    pub path: String,
+    pub name: String,
+    #[serde(default)]
+    pub scope: Scope,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

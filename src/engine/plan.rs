@@ -1,7 +1,7 @@
 use super::expand_env;
 use crate::catalog::{
-    Catalog, Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction,
-    profile_var,
+    Catalog, Category, Hive, Item, Level, RegProbe, RegType, Risk, Scope, Startup, Step,
+    TaskAction, profile_var,
 };
 use crate::system::{
     AppxPackage, Inspect, ProcessInfo, Provisioned, RegRoot, RegValue, TaskInfo, UserProfile,
@@ -107,6 +107,9 @@ pub enum OpKind {
     },
     /// Stands for the accounts a step scoped to every user could not see.
     OtherProfiles,
+    Unsupported {
+        reason: String,
+    },
 }
 
 impl fmt::Display for OpKind {
@@ -135,6 +138,7 @@ impl fmt::Display for OpKind {
             OpKind::Run { exe, args, .. } => write!(f, "run {} {}", exe.display(), args.join(" ")),
             OpKind::Delete { path } => write!(f, "delete {}", path.display()),
             OpKind::OtherProfiles => write!(f, "other user profiles"),
+            OpKind::Unsupported { reason } => write!(f, "{reason}"),
         }
     }
 }
@@ -489,16 +493,20 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                 candidates,
                 args,
                 skip_exit_codes,
-                when_present,
+                when_registered,
             } => plan_run(
                 candidates,
                 args,
                 skip_exit_codes,
-                when_present,
+                when_registered,
                 snap,
                 sys,
                 &mut ops,
             ),
+            Step::Unsupported {
+                when_registered,
+                reason,
+            } => ops.push(plan_unsupported(when_registered, reason, snap, sys)),
             Step::Delete { paths, scope } => {
                 ops.extend(snap.other_profiles_op(*scope));
                 for (who, folder) in snap.user_folders(*scope) {
@@ -799,25 +807,27 @@ enum Presence {
     Unknown(String),
 }
 
-/// Profile-relative paths are checked in every profile folder, so a copy installed
-/// for another account still counts. One path found is enough; otherwise any path that
-/// could not be checked, or profiles that could not be listed, leave it unknown.
-fn presence(paths: &[String], snap: &Snapshot, sys: &dyn Inspect) -> Presence {
-    let folders = snap.user_folders(Scope::AllUsers);
-    let mut seen = HashSet::new();
+fn probe_roots(probe: &RegProbe, snap: &Snapshot) -> Vec<RegRoot> {
+    match probe.hive {
+        Hive::Hklm => vec![RegRoot::Machine],
+        Hive::Hkcr => vec![RegRoot::Classes],
+        Hive::Hkcu => snap.user_roots(probe.scope),
+    }
+}
+
+/// One value found is enough; otherwise a value that could not be read, or other
+/// profiles that could not be listed for an all-users probe, leave it unknown.
+fn presence(probes: &[RegProbe], snap: &Snapshot, sys: &dyn Inspect) -> Presence {
     let mut unknown = None;
-    for raw in paths {
-        for (_, folder) in &folders {
-            let path = expand_for_profile(raw, folder.as_deref());
-            if !seen.insert(path.clone()) {
-                continue;
-            }
-            match sys.exists(&path) {
-                Ok(true) => return Presence::Present,
-                Ok(false) => {}
+    for probe in probes {
+        for root in probe_roots(probe, snap) {
+            match sys.registry_value(&root, &probe.path, &probe.name) {
+                Ok(Some(_)) => return Presence::Present,
+                Ok(None) => {}
                 Err(e) => {
-                    unknown
-                        .get_or_insert_with(|| format!("could not check {}: {e}", path.display()));
+                    unknown.get_or_insert_with(|| {
+                        format!("could not read {root}\\{}\\{}: {e}", probe.path, probe.name)
+                    });
                 }
             }
         }
@@ -826,10 +836,23 @@ fn presence(paths: &[String], snap: &Snapshot, sys: &dyn Inspect) -> Presence {
         return Presence::Unknown(why);
     }
     match &snap.profiles_error {
-        Some(e) if paths.iter().any(|p| profile_var(p).is_some()) => {
+        Some(e) if probes.iter().any(|p| p.scope == Scope::AllUsers) => {
             Presence::Unknown(format!("could not list user profiles: {e}"))
         }
         _ => Presence::Missing,
+    }
+}
+
+fn plan_unsupported(probes: &[RegProbe], reason: &str, snap: &Snapshot, sys: &dyn Inspect) -> Op {
+    let kind = OpKind::Unsupported {
+        reason: reason.to_string(),
+    };
+    match presence(probes, snap, sys) {
+        Presence::Present => Op::new(kind, OpState::NonRemovable),
+        Presence::Missing => Op::new(kind, OpState::Absent),
+        Presence::Unknown(why) => Op::new(kind, OpState::Absent)
+            .with_detail(why)
+            .unverified(true),
     }
 }
 
@@ -838,25 +861,31 @@ fn plan_run(
     candidates: &[String],
     args: &[String],
     skip_exit_codes: &[i32],
-    when_present: &[String],
+    when_registered: &[RegProbe],
     snap: &Snapshot,
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
 ) {
+    let mut unchecked = None;
     for candidate in candidates {
         let exe = PathBuf::from(expand_env(candidate));
-        if !matches!(sys.exists(&exe), Ok(true)) {
-            continue;
+        match sys.exists(&exe) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(e) => {
+                unchecked.get_or_insert_with(|| format!("could not check {}: {e}", exe.display()));
+                continue;
+            }
         }
         let kind = OpKind::Run {
             exe,
             args: args.to_vec(),
             skip_exit_codes: skip_exit_codes.to_vec(),
         };
-        let presence = if when_present.is_empty() {
+        let presence = if when_registered.is_empty() {
             Presence::Present
         } else {
-            presence(when_present, snap, sys)
+            presence(when_registered, snap, sys)
         };
         ops.push(match presence {
             Presence::Present => Op::new(kind, OpState::WillApply),
@@ -878,7 +907,8 @@ fn plan_run(
             },
             OpState::Absent,
         )
-        .with_detail("no candidate executable found"),
+        .unverified(unchecked.is_some())
+        .with_detail(unchecked.unwrap_or_else(|| "no candidate executable found".into())),
     );
 }
 
@@ -943,16 +973,16 @@ fn plan_delete(
                 plan_kill_residents(&path, snap, ops);
                 if info.files > 0 {
                     notes.push(format!(
-                        "{} holds {} files ({}).",
+                        "{} holds {} ({}).",
                         path.display(),
-                        info.files,
+                        count(info.files, "file", "files"),
                         human_bytes(info.bytes)
                     ));
                 }
                 ops.push(
                     Op::new(OpKind::Delete { path }, OpState::WillApply).with_detail(format!(
-                        "{who}: {} files, {}",
-                        info.files,
+                        "{who}: {}, {}",
+                        count(info.files, "file", "files"),
                         human_bytes(info.bytes)
                     )),
                 );
@@ -965,6 +995,10 @@ fn plan_delete(
             ),
         }
     }
+}
+
+pub fn count(n: u64, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 pub fn human_bytes(bytes: u64) -> String {
@@ -1377,100 +1411,166 @@ summary = "x"
 kind = "run"
 candidates = ["C:\\Setup.exe"]
 args = ["/uninstall"]
-when_present = ["%LOCALAPPDATA%\\Demo\\Demo.exe", "C:\\Program Files\\Demo\\Demo.exe"]
+when_registered = [{ hive = "hkcu", path = "Software\\Demo", name = "Version" }, { hive = "hklm", path = "SOFTWARE\\Demo", name = "Version" }]
 "#;
 
-    fn run_state(sys: &Fake) -> OpState {
-        let catalog = Catalog::parse("t", RUN_CATALOG).unwrap();
-        let plan = build_plan(&catalog, &Selection::level(Level::Medium), 22631, true, sys);
-        plan.items[0].ops[0].state
+    fn alice() -> RegRoot {
+        RegRoot::User {
+            sid: "S-1-5-21-1".into(),
+            name: "alice".into(),
+        }
     }
 
-    #[test]
-    fn run_step_is_done_when_nothing_it_removes_is_present() {
-        let base = || {
-            Fake::default()
-                .with_profile("S-1-5-21-1", "alice", "C:\\Users\\alice", true)
-                .with_profile("S-1-5-21-2", "bob", "C:\\Users\\bob", false)
-                .interactive("S-1-5-21-1")
-                .with_path("C:\\Setup.exe", 1, 1)
-        };
-        assert_eq!(run_state(&base()), OpState::AlreadyDone);
-        let other_profile =
-            base().with_path("C:\\Users\\bob\\AppData\\Local\\Demo\\Demo.exe", 1, 1);
-        assert_eq!(run_state(&other_profile), OpState::WillApply);
-        let machine = base().with_path("C:\\Program Files\\Demo\\Demo.exe", 1, 1);
-        assert_eq!(run_state(&machine), OpState::WillApply);
+    fn run_base() -> Fake {
+        Fake::default()
+            .with_profile("S-1-5-21-1", "alice", "C:\\Users\\alice", true)
+            .interactive("S-1-5-21-1")
+            .with_path("C:\\Setup.exe", 1, 1)
     }
 
-    #[test]
-    fn run_step_without_probe_always_runs() {
-        let catalog =
-            Catalog::parse("t", &RUN_CATALOG.replace("when_present", "# when_present")).unwrap();
-        let sys = Fake::default().with_path("C:\\Setup.exe", 1, 1);
-        let plan = build_plan(
-            &catalog,
-            &Selection::level(Level::Medium),
-            22631,
-            true,
-            &sys,
-        );
-        assert_eq!(plan.items[0].ops[0].state, OpState::WillApply);
-    }
-
-    fn run_op(sys: &Fake) -> Op {
-        let catalog = Catalog::parse("t", RUN_CATALOG).unwrap();
+    fn run_op_in(catalog: &str, sys: &Fake) -> Op {
+        let catalog = Catalog::parse("t", catalog).unwrap();
         let plan = build_plan(&catalog, &Selection::level(Level::Medium), 22631, true, sys);
         plan.items[0].ops[0].clone()
     }
 
-    #[test]
-    fn run_step_presence_that_cannot_be_checked_is_unverified() {
-        let base = || {
-            Fake::default()
-                .with_path("C:\\Setup.exe", 1, 1)
-                .failing_path("C:\\Program Files\\Demo\\Demo.exe")
-        };
-        let op = run_op(&base());
-        assert_eq!(op.state, OpState::WillApply);
-        assert!(op.unverified, "{op:?}");
-        assert!(op.detail.starts_with("could not check"), "{}", op.detail);
-
-        // one copy found is enough, whatever else could not be checked
-        let found = run_op(&base().with_path(&expand_env("%LOCALAPPDATA%\\Demo\\Demo.exe"), 1, 1));
-        assert_eq!(found.state, OpState::WillApply);
-        assert!(!found.unverified);
+    fn run_op(sys: &Fake) -> Op {
+        run_op_in(RUN_CATALOG, sys)
     }
 
     #[test]
-    fn run_step_presence_is_unverified_when_profiles_cannot_be_listed() {
+    fn run_step_is_done_when_nothing_it_removes_is_registered() {
+        assert_eq!(run_op(&run_base()).state, OpState::AlreadyDone);
+        let user = run_base().with_registry(
+            &alice(),
+            "Software\\Demo",
+            "Version",
+            RegValue::String("1.0".into()),
+        );
+        assert_eq!(run_op(&user).state, OpState::WillApply);
+        let machine = run_base().with_registry(
+            &RegRoot::Machine,
+            "SOFTWARE\\Demo",
+            "Version",
+            RegValue::String("1.0".into()),
+        );
+        assert_eq!(run_op(&machine).state, OpState::WillApply);
+    }
+
+    #[test]
+    fn run_step_without_probe_always_runs() {
+        let catalog = RUN_CATALOG
+            .lines()
+            .filter(|l| !l.starts_with("when_registered"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(run_op_in(&catalog, &run_base()).state, OpState::WillApply);
+    }
+
+    #[test]
+    fn run_step_probe_that_cannot_be_read_is_unverified() {
+        let op = run_op(&run_base().unreadable(&alice()));
+        assert_eq!(op.state, OpState::WillApply);
+        assert!(op.unverified, "{op:?}");
+        assert!(op.detail.starts_with("could not read"), "{}", op.detail);
+
+        // one value found is enough, whatever else could not be read
+        let found = run_base().unreadable(&alice()).with_registry(
+            &RegRoot::Machine,
+            "SOFTWARE\\Demo",
+            "Version",
+            RegValue::String("1.0".into()),
+        );
+        let op = run_op(&found);
+        assert_eq!(op.state, OpState::WillApply);
+        assert!(!op.unverified);
+    }
+
+    #[test]
+    fn all_users_probe_is_unverified_when_profiles_cannot_be_listed() {
+        let all_users = RUN_CATALOG.replace(
+            "{ hive = \"hkcu\", path = \"Software\\\\Demo\", name = \"Version\" }",
+            "{ hive = \"hkcu\", scope = \"all-users\", path = \"Software\\\\Demo\", name = \"Version\" }",
+        );
+        assert_ne!(all_users, RUN_CATALOG);
         let sys = Fake::default()
             .with_path("C:\\Setup.exe", 1, 1)
             .failing_profiles();
-        let op = run_op(&sys);
+        let op = run_op_in(&all_users, &sys);
         assert_eq!(op.state, OpState::WillApply);
         assert!(op.unverified);
         assert!(op.detail.contains("user profiles"), "{}", op.detail);
+
+        // the account that runs winprune is still readable, so a user probe is known
+        assert_eq!(run_op(&sys).state, OpState::AlreadyDone);
     }
 
     #[test]
-    fn run_step_presence_ignores_profiles_when_it_lists_no_profile_path() {
-        let catalog = Catalog::parse(
-            "t",
-            &RUN_CATALOG.replace("\"%LOCALAPPDATA%\\\\Demo\\\\Demo.exe\", ", ""),
-        )
-        .unwrap();
-        let sys = Fake::default()
-            .with_path("C:\\Setup.exe", 1, 1)
-            .failing_profiles();
+    fn run_candidate_that_cannot_be_checked_is_unverified_not_absent() {
+        let op = run_op(&Fake::default().failing_path("C:\\Setup.exe"));
+        assert_eq!(op.state, OpState::Absent);
+        assert!(op.unverified);
+        assert!(op.detail.starts_with("could not check"), "{}", op.detail);
+        let missing = run_op(&Fake::default());
+        assert_eq!(missing.state, OpState::Absent);
+        assert!(!missing.unverified);
+    }
+
+    const UNSUPPORTED_CATALOG: &str = r#"
+[[item]]
+id = "onedrive.machine"
+name = "Machine"
+category = "onedrive"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "unsupported"
+reason = "installed for all users"
+when_registered = [{ hive = "hklm", path = "SOFTWARE\\Demo", name = "Version" }]
+"#;
+
+    #[test]
+    fn unsupported_step_reports_what_it_finds_and_apply_skips_it() {
+        let present = Fake::default().with_registry(
+            &RegRoot::Machine,
+            "SOFTWARE\\Demo",
+            "Version",
+            RegValue::String("1.0".into()),
+        );
+        let op = run_op_in(UNSUPPORTED_CATALOG, &present);
+        assert_eq!(op.state, OpState::NonRemovable);
+        assert_eq!(op.kind.to_string(), "installed for all users");
+
+        let catalog = Catalog::parse("t", UNSUPPORTED_CATALOG).unwrap();
         let plan = build_plan(
             &catalog,
             &Selection::level(Level::Medium),
             22631,
             true,
-            &sys,
+            &present,
         );
-        assert_eq!(plan.items[0].ops[0].state, OpState::AlreadyDone);
+        let report = crate::engine::apply_plan(
+            &plan,
+            &mut crate::system::recorder::Recorder::default(),
+            true,
+            &mut |_| {},
+        );
+        assert_eq!(
+            report.results[0].outcome,
+            crate::system::Outcome::Skipped("installed for all users".into())
+        );
+
+        assert_eq!(
+            run_op_in(UNSUPPORTED_CATALOG, &Fake::default()).state,
+            OpState::Absent
+        );
+        let unread = run_op_in(
+            UNSUPPORTED_CATALOG,
+            &Fake::default().unreadable(&RegRoot::Machine),
+        );
+        assert_eq!(unread.state, OpState::Absent);
+        assert!(unread.unverified);
     }
 
     const PATTERNS_CATALOG: &str = r#"

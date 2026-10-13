@@ -7,7 +7,8 @@ mod validate;
 
 pub use load::Catalog;
 pub use model::{
-    Applicability, Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction,
+    Applicability, Category, Hive, Item, Level, RegProbe, RegType, Risk, Scope, Startup, Step,
+    TaskAction,
 };
 
 /// Variables a catalog path can start with to point inside a user profile, and where
