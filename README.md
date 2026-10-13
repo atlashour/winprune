@@ -32,6 +32,7 @@ switches that do work on those editions sit next to it.
 winprune                      terminal UI, starts at level medium
 winprune --level high         terminal UI, starts at level high
 winprune plan --level max     print what would happen, change nothing
+winprune diff --level high    what of level high is still left to do here
 winprune apply --level high   apply after a confirmation and a UAC prompt
 winprune apply --level medium --dry-run --yes
                               walk the real code path without touching anything
@@ -40,7 +41,18 @@ winprune catalog list         every item with its level and risk
 
 `--skip a.b,c.d` leaves items out, `--add x.y` pulls items in on top of the level,
 `--only x.y,z.w` ignores the level entirely. `plan --json` prints the plan for
-tooling. Each apply writes a JSON report and a log under `%ProgramData%\winprune`
+tooling.
+
+`diff` reads the machine the same way `plan` does and sorts every item of the level
+into pending (applying would still change something), applied, absent (nothing it
+acts on is here, removed earlier or never shipped), blocked (only parts Windows keeps
+are left) and not for this build. Without elevation the provisioned packages and the
+Default profile cannot be read; items that depend on them show as `applied?` when
+everything readable is applied, or `unknown`. `diff --json` gives the same for
+tooling, `diff --all` lists what could not be read. The terminal UI shows the same
+status next to each item.
+
+Each apply writes a JSON report and a log under `%ProgramData%\winprune`
 (or `%LocalAppData%\winprune` when not elevated).
 
 Plan and dry-run never need administrator rights. Applying does: winprune writes the
@@ -99,7 +111,8 @@ patterns = ["*OldVendor*"]
 
 Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`. Registry
 and delete steps under a user profile take `scope = "user" | "all-users" |
-"default-profile"`. See the files under `catalog/` for the shape of each.
+"default-profile"`. A `run` step can list in `when_present` what it removes; once
+none of it is left, the step counts as done and is not run again. See the files under `catalog/` for the shape of each.
 `winprune catalog validate --catalog my.toml` checks an overlay.
 
 ## Build
