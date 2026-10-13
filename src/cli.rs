@@ -14,6 +14,8 @@ pub const EXIT_USAGE: i32 = 1;
 pub const EXIT_FAILURES: i32 = 2;
 pub const EXIT_ELEVATION: i32 = 3;
 pub const EXIT_ABORTED: i32 = 4;
+/// `diff --exit-code` found something left to apply.
+pub const EXIT_PENDING: i32 = 5;
 
 #[derive(Parser, Debug)]
 #[command(name = "winprune", version, about = "Windows 10/11 debloater", long_about = None)]
@@ -43,6 +45,9 @@ pub enum Command {
         /// List every operation that could not be read, not only a count
         #[arg(long)]
         all: bool,
+        /// Exit with 5 when something is pending, for scripts
+        #[arg(long)]
+        exit_code: bool,
     },
     /// Apply the selected items (asks for elevation)
     Apply {
@@ -91,6 +96,24 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// An id that is not in the catalog is a typo, and a mistyped --skip would apply
+    /// the very item it was meant to keep out.
+    fn unknown_ids(&self, catalog: &Catalog) -> Vec<String> {
+        let known: HashSet<&str> = catalog.items.iter().map(|i| i.id.as_str()).collect();
+        [
+            ("--only", &self.only),
+            ("--skip", &self.skip),
+            ("--add", &self.add),
+        ]
+        .into_iter()
+        .flat_map(|(flag, ids)| {
+            ids.iter()
+                .filter(|id| !known.contains(id.as_str()))
+                .map(move |id| format!("{flag} {id}"))
+        })
+        .collect()
+    }
+
     pub fn selection(&self) -> Selection {
         Selection {
             level: self.level,
@@ -161,6 +184,19 @@ pub fn load_catalog(overlay: Option<&PathBuf>) -> Result<Catalog, String> {
     }
 }
 
+fn load_checked(filter: &Filter) -> Result<Catalog, String> {
+    let catalog = load_catalog(filter.catalog.as_ref())?;
+    let unknown = filter.unknown_ids(&catalog);
+    if unknown.is_empty() {
+        Ok(catalog)
+    } else {
+        Err(format!(
+            "not in the catalog: {}; `winprune catalog list` shows every id",
+            unknown.join(", ")
+        ))
+    }
+}
+
 pub fn run(cli: Cli) -> i32 {
     let info = os::detect();
 
@@ -177,7 +213,7 @@ pub fn run(cli: Cli) -> i32 {
         return code;
     }
 
-    let catalog = match load_catalog(cli.filter.catalog.as_ref()) {
+    let catalog = match load_checked(&cli.filter) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
@@ -251,7 +287,11 @@ pub fn run(cli: Cli) -> i32 {
             }
             EXIT_OK
         }
-        Some(Command::Diff { json, all }) => {
+        Some(Command::Diff {
+            json,
+            all,
+            exit_code,
+        }) => {
             let selection = cli.filter.selection();
             let plan = build(&catalog, &cli.filter, &ctx);
             let diff = engine::build_diff(&catalog, &selection, &plan);
@@ -263,7 +303,7 @@ pub fn run(cli: Cli) -> i32 {
             } else {
                 print!("{}", render_diff(&diff, all));
             }
-            EXIT_OK
+            diff_exit(&diff, exit_code)
         }
         Some(Command::Apply { dry_run, yes }) => {
             apply_command(&catalog, &cli.filter, &ctx, dry_run, yes)
@@ -273,7 +313,7 @@ pub fn run(cli: Cli) -> i32 {
 
 fn run_request(request: Request, dir: PathBuf, info: os::OsInfo) -> i32 {
     let filter = Filter::from_request(&request, dir.clone());
-    let catalog = match load_catalog(filter.catalog.as_ref()) {
+    let catalog = match load_checked(&filter) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
@@ -400,6 +440,15 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
         );
     }
     out
+}
+
+/// Unread items do not count as pending; only an elevated run reads everything.
+fn diff_exit(diff: &Diff, exit_code: bool) -> i32 {
+    if exit_code && diff.counts.pending > 0 {
+        EXIT_PENDING
+    } else {
+        EXIT_OK
+    }
 }
 
 pub fn render_diff(diff: &Diff, all: bool) -> String {
@@ -575,9 +624,50 @@ mod tests {
             cli.command,
             Some(Command::Diff {
                 json: true,
-                all: false
+                all: false,
+                exit_code: false
             })
         ));
+    }
+
+    #[test]
+    fn diff_exit_code_is_opt_in_and_only_for_pending() {
+        use crate::catalog::Startup;
+        use crate::system::fake::Fake;
+        let cli = Cli::try_parse_from(["winprune", "diff", "--exit-code"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Diff {
+                exit_code: true,
+                ..
+            })
+        ));
+        let catalog = Catalog::parse(
+            "t",
+            "[[item]]
+id = \"services.demo\"
+name = \"Demo\"
+category = \"services\"
+level = \"medium\"
+risk = \"low\"
+summary = \"x\"
+[[item.step]]
+kind = \"service\"
+names = [\"DemoSvc\"]
+startup = \"manual\"
+",
+        )
+        .unwrap();
+        let selection = Selection::level(Level::Medium);
+        let diff_on = |sys: &Fake| {
+            let plan = engine::build_plan(&catalog, &selection, 26100, true, sys);
+            engine::build_diff(&catalog, &selection, &plan)
+        };
+        let pending = diff_on(&Fake::default().with_service("DemoSvc", Startup::Automatic, false));
+        assert_eq!(diff_exit(&pending, true), EXIT_PENDING);
+        assert_eq!(diff_exit(&pending, false), EXIT_OK);
+        let done = diff_on(&Fake::default().with_service("DemoSvc", Startup::Manual, false));
+        assert_eq!(diff_exit(&done, true), EXIT_OK);
     }
 
     #[test]
@@ -612,6 +702,30 @@ startup = \"manual\"
             "{text}"
         );
         assert!(text.contains("1 pending, 0 applied"), "{text}");
+    }
+
+    #[test]
+    fn ids_missing_from_the_catalog_are_named_with_their_flag() {
+        let catalog = load_catalog(None).unwrap();
+        let known = catalog.items[0].id.clone();
+        let cli = Cli::try_parse_from([
+            "winprune",
+            "apply",
+            "--skip",
+            &format!("{known},onedrive.unistall"),
+            "--only",
+            "telemetry.nope",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.filter.unknown_ids(&catalog),
+            vec!["--only telemetry.nope", "--skip onedrive.unistall"]
+        );
+        assert!(
+            load_checked(&cli.filter)
+                .unwrap_err()
+                .contains("onedrive.unistall")
+        );
     }
 
     #[test]

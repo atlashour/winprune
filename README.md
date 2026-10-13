@@ -49,9 +49,13 @@ acts on is here, removed earlier or never shipped), blocked (nothing left to app
 but parts Windows keeps remain) and not for this build. Without elevation the
 provisioned packages and the Default profile cannot be read; items that depend on
 them, or on anything else that could not be read, show as `applied?` when nothing
-readable is pending, or `unknown`. `diff --json` gives the same for
-tooling, `diff --all` lists what could not be read. The terminal UI shows the same
-status next to each item.
+readable is pending, or `unknown`. `diff --json` gives the same for tooling,
+`diff --all` lists what could not be read, and `diff --exit-code` exits with 5 when
+something is pending (items that could not be read do not count). The terminal UI
+shows the same status next to each item.
+
+Exit codes: 0 done, 1 bad arguments or setup error, 2 some operations failed, 3
+elevation needed, 4 aborted at a prompt, 5 `diff --exit-code` found pending items.
 
 Each apply writes a JSON report and a log under `%ProgramData%\winprune`
 (or `%LocalAppData%\winprune` when not elevated).
