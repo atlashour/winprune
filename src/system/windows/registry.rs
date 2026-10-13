@@ -21,8 +21,9 @@ fn resolve(sys: &WindowsSystem, root: &RegRoot, path: &str) -> Result<(RegKey, S
         RegRoot::CurrentUser => Ok((RegKey::predef(HKEY_CURRENT_USER), path.to_string())),
         RegRoot::User { sid, .. } => user_root(sid, path),
         RegRoot::DefaultProfile => {
+            // its class registrations are in UsrClass.dat, which is never mounted
             if path.to_ascii_lowercase().starts_with(CLASSES_PREFIX) {
-                return Err(SysError::NotLoaded);
+                return Err(SysError::Unreachable);
             }
             sys.default_mount().map_err(|_| SysError::NotLoaded)?;
             user_root(DEFAULT_MOUNT, path)
@@ -100,6 +101,7 @@ pub fn write(
     let (base, path) = match resolve(sys, root, path) {
         Ok(r) => r,
         Err(SysError::NotLoaded) => return Outcome::Skipped("profile hive not loaded".into()),
+        Err(e @ SysError::Unreachable) => return Outcome::Skipped(e.to_string()),
         Err(e) => return Outcome::Failed(e.to_string()),
     };
     let key = match base.create_subkey_with_flags(&path, KEY_SET_VALUE) {
@@ -144,6 +146,7 @@ pub fn delete(sys: &WindowsSystem, root: &RegRoot, path: &str, name: &str) -> Ou
     let (base, path) = match resolve(sys, root, path) {
         Ok(r) => r,
         Err(SysError::NotLoaded) => return Outcome::Skipped("profile hive not loaded".into()),
+        Err(e @ SysError::Unreachable) => return Outcome::Skipped(e.to_string()),
         Err(e) => return Outcome::Failed(e.to_string()),
     };
     match base.open_subkey_with_flags(&path, KEY_SET_VALUE) {

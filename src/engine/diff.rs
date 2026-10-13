@@ -45,7 +45,7 @@ impl PlannedItem {
         if ops().any(Op::pending) {
             ItemStatus::Pending
         } else if ops().any(Op::unread) {
-            if ops().any(|op| !op.unread() && op.state != OpState::WillApply) {
+            if ops().any(|op| !op.unread()) {
                 ItemStatus::Unconfirmed
             } else {
                 ItemStatus::Unverified

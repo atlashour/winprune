@@ -23,8 +23,8 @@ skip_exit_codes = [-2147219813]
 # nothing. The client files cannot tell either: the delete step below removes them, so
 # a failed uninstall would then look done. These values are what a per-user install
 # keeps registered; after an uninstall the Uninstall entry is gone and the OneDrive key
-# loses Version (seen on 26300). The uninstaller acts for the account that runs it,
-# hence the user scope.
+# loses Version (seen on 26300). A run step reads user-scope probes for the account the
+# command runs as, which is the one the uninstaller acts for.
 when_registered = [
     { hive = "hkcu", path = "Software\\Microsoft\\OneDrive", name = "Version" },
     { hive = "hkcu", path = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OneDriveSetup.exe", name = "UninstallString" },
@@ -35,7 +35,7 @@ when_registered = [
 # Microsoft documents no way to uninstall it, so it is reported and left in place.
 [[item.step]]
 kind = "unsupported"
-reason = "OneDrive is installed for all users (per-machine); winprune does not remove that install"
+reason = "OneDrive installed for all users (per-machine)"
 when_registered = [
     { hive = "hklm", path = "SOFTWARE\\Microsoft\\OneDrive", name = "Version" },
     { hive = "hklm", path = "SOFTWARE\\WOW6432Node\\Microsoft\\OneDrive", name = "Version" },

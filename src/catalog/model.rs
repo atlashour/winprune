@@ -215,7 +215,8 @@ pub enum Step {
         skip_exit_codes: Vec<i32>,
         /// Values the software the command removes keeps registered while installed.
         /// When none is present the run is already done; an uninstaller that stays on
-        /// disk after uninstalling cannot tell us that on its own.
+        /// disk after uninstalling cannot tell us that on its own. User-scope probes
+        /// are read for the account the command runs as, the one it acts for.
         #[serde(default)]
         when_registered: Vec<RegProbe>,
     },

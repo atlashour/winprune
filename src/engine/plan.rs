@@ -4,8 +4,8 @@ use crate::catalog::{
     TaskAction, profile_var,
 };
 use crate::system::{
-    AppxPackage, Inspect, ProcessInfo, Provisioned, RegRoot, RegValue, TaskInfo, UserProfile,
-    lives_under,
+    AppxPackage, Inspect, ProcessInfo, Provisioned, RegRoot, RegValue, SysError, TaskInfo,
+    UserProfile, lives_under,
 };
 use serde::Serialize;
 use std::collections::HashSet;
@@ -105,8 +105,10 @@ pub enum OpKind {
     Delete {
         path: PathBuf,
     },
-    /// Stands for the accounts a step scoped to every user could not see.
-    OtherProfiles,
+    /// Stands for a list the plan could not read, so whatever it holds was not seen.
+    NotListed {
+        what: String,
+    },
     Unsupported {
         reason: String,
     },
@@ -137,7 +139,7 @@ impl fmt::Display for OpKind {
             OpKind::Kill { name } => write!(f, "kill {name}"),
             OpKind::Run { exe, args, .. } => write!(f, "run {} {}", exe.display(), args.join(" ")),
             OpKind::Delete { path } => write!(f, "delete {}", path.display()),
-            OpKind::OtherProfiles => write!(f, "other user profiles"),
+            OpKind::NotListed { what } => write!(f, "{what}"),
             OpKind::Unsupported { reason } => write!(f, "{reason}"),
         }
     }
@@ -196,6 +198,19 @@ impl Op {
     /// The current state is not known: a read failed, or only an elevated process sees it.
     pub fn unread(&self) -> bool {
         self.unverified || self.state == OpState::NeedsElevation
+    }
+
+    /// Short label for listings. An unread op must not look like a known one.
+    pub fn tag(&self) -> &'static str {
+        match (self.state, self.unverified) {
+            (OpState::WillApply, true) => "apply?",
+            (OpState::WillApply, false) => "apply",
+            (OpState::Absent | OpState::AlreadyDone, true) => "unread",
+            (OpState::Absent, false) => "absent",
+            (OpState::AlreadyDone, false) => "done",
+            (OpState::NonRemovable, _) => "keep",
+            (OpState::NeedsElevation, _) => "elev",
+        }
     }
 }
 
@@ -389,11 +404,10 @@ impl Snapshot {
             .profiles_error
             .as_ref()
             .filter(|_| scope == Scope::AllUsers)?;
-        Some(
-            Op::new(OpKind::OtherProfiles, OpState::Absent)
-                .with_detail(format!("could not list user profiles: {e}"))
-                .unverified(true),
-        )
+        Some(not_listed(
+            "other user profiles",
+            &format!("could not list user profiles: {e}"),
+        ))
     }
 
     /// Registry roots a per-user step must reach for the given scope.
@@ -466,15 +480,10 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                 delete,
                 scope,
             } => {
-                let roots = match hive {
-                    Hive::Hklm => vec![RegRoot::Machine],
-                    Hive::Hkcr => vec![RegRoot::Classes],
-                    Hive::Hkcu => {
-                        ops.extend(snap.other_profiles_op(*scope));
-                        snap.user_roots(*scope)
-                    }
-                };
-                for root in roots {
+                if *hive == Hive::Hkcu {
+                    ops.extend(snap.other_profiles_op(*scope));
+                }
+                for root in registry_roots(*hive, *scope, snap) {
                     plan_registry(
                         root,
                         path,
@@ -599,29 +608,31 @@ fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
         ("provisioned packages", &snap.provisioned_error),
     ] {
         if let Some(e) = error {
-            ops.push(
-                Op::new(
-                    OpKind::PackagePattern {
-                        pattern: list.into(),
-                    },
-                    OpState::Absent,
-                )
-                .with_detail(format!("could not list: {e}"))
-                .unverified(true),
-            );
+            ops.push(not_listed(list, &format!("could not list: {e}")));
         }
     }
     if matches!(snap.provisioned, Provisioned::NeedsElevation) {
         ops.push(
             Op::new(
-                OpKind::PackagePattern {
-                    pattern: "provisioned packages".into(),
+                OpKind::NotListed {
+                    what: "provisioned packages".into(),
                 },
                 OpState::NeedsElevation,
             )
             .with_detail("not checked without elevation"),
         );
     }
+}
+
+fn not_listed(what: &str, why: &str) -> Op {
+    Op::new(
+        OpKind::NotListed {
+            what: what.to_string(),
+        },
+        OpState::Absent,
+    )
+    .with_detail(why)
+    .unverified(true)
 }
 
 fn plan_services(names: &[String], startup: Startup, sys: &dyn Inspect, ops: &mut Vec<Op>) {
@@ -669,6 +680,8 @@ fn plan_registry(
     // unreadable is not the same as absent; let apply try
     let (current, unreadable) = match sys.registry_value(&root, path, name) {
         Ok(v) => (v, None),
+        // apply could not write it either, so it is not part of the plan at all
+        Err(SysError::Unreachable) => return,
         Err(e) => (None, Some(format!("could not read: {e}"))),
     };
     if delete {
@@ -807,23 +820,35 @@ enum Presence {
     Unknown(String),
 }
 
-fn probe_roots(probe: &RegProbe, snap: &Snapshot) -> Vec<RegRoot> {
-    match probe.hive {
+fn registry_roots(hive: Hive, scope: Scope, snap: &Snapshot) -> Vec<RegRoot> {
+    match hive {
         Hive::Hklm => vec![RegRoot::Machine],
         Hive::Hkcr => vec![RegRoot::Classes],
-        Hive::Hkcu => snap.user_roots(probe.scope),
+        Hive::Hkcu => snap.user_roots(scope),
     }
+}
+
+/// Who a probe asks about. A command acts for the account that runs it, which is not
+/// the interactive user when another administrator answered the UAC prompt.
+#[derive(Clone, Copy)]
+enum ProbeFor {
+    Interactive,
+    RunningAccount,
 }
 
 /// One value found is enough; otherwise a value that could not be read, or other
 /// profiles that could not be listed for an all-users probe, leave it unknown.
-fn presence(probes: &[RegProbe], snap: &Snapshot, sys: &dyn Inspect) -> Presence {
+fn presence(probes: &[RegProbe], who: ProbeFor, snap: &Snapshot, sys: &dyn Inspect) -> Presence {
     let mut unknown = None;
     for probe in probes {
-        for root in probe_roots(probe, snap) {
+        let roots = match (who, probe.hive, probe.scope) {
+            (ProbeFor::RunningAccount, Hive::Hkcu, Scope::User) => vec![RegRoot::CurrentUser],
+            _ => registry_roots(probe.hive, probe.scope, snap),
+        };
+        for root in roots {
             match sys.registry_value(&root, &probe.path, &probe.name) {
                 Ok(Some(_)) => return Presence::Present,
-                Ok(None) => {}
+                Ok(None) | Err(SysError::Unreachable) => {}
                 Err(e) => {
                     unknown.get_or_insert_with(|| {
                         format!("could not read {root}\\{}\\{}: {e}", probe.path, probe.name)
@@ -847,8 +872,10 @@ fn plan_unsupported(probes: &[RegProbe], reason: &str, snap: &Snapshot, sys: &dy
     let kind = OpKind::Unsupported {
         reason: reason.to_string(),
     };
-    match presence(probes, snap, sys) {
-        Presence::Present => Op::new(kind, OpState::NonRemovable),
+    match presence(probes, ProbeFor::Interactive, snap, sys) {
+        Presence::Present => {
+            Op::new(kind, OpState::NonRemovable).with_detail("winprune does not remove it")
+        }
         Presence::Missing => Op::new(kind, OpState::Absent),
         Presence::Unknown(why) => Op::new(kind, OpState::Absent)
             .with_detail(why)
@@ -885,7 +912,7 @@ fn plan_run(
         let presence = if when_registered.is_empty() {
             Presence::Present
         } else {
-            presence(when_registered, snap, sys)
+            presence(when_registered, ProbeFor::RunningAccount, snap, sys)
         };
         ops.push(match presence {
             Presence::Present => Op::new(kind, OpState::WillApply),
@@ -1442,7 +1469,7 @@ when_registered = [{ hive = "hkcu", path = "Software\\Demo", name = "Version" },
     fn run_step_is_done_when_nothing_it_removes_is_registered() {
         assert_eq!(run_op(&run_base()).state, OpState::AlreadyDone);
         let user = run_base().with_registry(
-            &alice(),
+            &RegRoot::CurrentUser,
             "Software\\Demo",
             "Version",
             RegValue::String("1.0".into()),
@@ -1458,6 +1485,26 @@ when_registered = [{ hive = "hkcu", path = "Software\\Demo", name = "Version" },
     }
 
     #[test]
+    fn run_step_asks_about_the_account_the_command_runs_as() {
+        // another administrator answered UAC: the uninstaller acts for that account,
+        // not for alice who started winprune
+        let only_alice = run_base().with_registry(
+            &alice(),
+            "Software\\Demo",
+            "Version",
+            RegValue::String("1.0".into()),
+        );
+        assert_eq!(run_op(&only_alice).state, OpState::AlreadyDone);
+        let running = run_base().with_registry(
+            &RegRoot::CurrentUser,
+            "Software\\Demo",
+            "Version",
+            RegValue::String("1.0".into()),
+        );
+        assert_eq!(run_op(&running).state, OpState::WillApply);
+    }
+
+    #[test]
     fn run_step_without_probe_always_runs() {
         let catalog = RUN_CATALOG
             .lines()
@@ -1469,13 +1516,13 @@ when_registered = [{ hive = "hkcu", path = "Software\\Demo", name = "Version" },
 
     #[test]
     fn run_step_probe_that_cannot_be_read_is_unverified() {
-        let op = run_op(&run_base().unreadable(&alice()));
+        let op = run_op(&run_base().unreadable(&RegRoot::CurrentUser));
         assert_eq!(op.state, OpState::WillApply);
         assert!(op.unverified, "{op:?}");
         assert!(op.detail.starts_with("could not read"), "{}", op.detail);
 
         // one value found is enough, whatever else could not be read
-        let found = run_base().unreadable(&alice()).with_registry(
+        let found = run_base().unreadable(&RegRoot::CurrentUser).with_registry(
             &RegRoot::Machine,
             "SOFTWARE\\Demo",
             "Version",
@@ -1558,7 +1605,7 @@ when_registered = [{ hive = "hklm", path = "SOFTWARE\\Demo", name = "Version" }]
         );
         assert_eq!(
             report.results[0].outcome,
-            crate::system::Outcome::Skipped("installed for all users".into())
+            crate::system::Outcome::Skipped("winprune does not remove it".into())
         );
 
         assert_eq!(
@@ -1571,6 +1618,35 @@ when_registered = [{ hive = "hklm", path = "SOFTWARE\\Demo", name = "Version" }]
         );
         assert_eq!(unread.state, OpState::Absent);
         assert!(unread.unverified);
+    }
+
+    #[test]
+    fn default_profile_class_keys_are_left_out_not_reported_unread() {
+        let catalog = Catalog::parse(
+            "t",
+            &SCOPE_CATALOG.replace("Software\\\\Demo", "Software\\\\Classes\\\\Demo"),
+        )
+        .unwrap();
+        let sys = Fake::default()
+            .with_profile("S-1-5-21-1", "alice", "C:\\Users\\alice", true)
+            .interactive("S-1-5-21-1");
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let roots: Vec<String> = plan.items[0]
+            .ops
+            .iter()
+            .filter_map(|o| match &o.kind {
+                OpKind::RegistrySet { root, .. } => Some(root.to_string()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(roots, vec!["HKU:alice"]);
+        assert!(!plan.items[0].has_unread());
     }
 
     const PATTERNS_CATALOG: &str = r#"
@@ -1597,7 +1673,7 @@ patterns = ["*One*", "*Two*", "*Three*"]
         let ops = appx_ops(&Fake::default().failing_packages());
         assert_eq!(ops.len(), 1, "{ops:?}");
         assert!(ops[0].unverified);
-        assert_eq!(ops[0].kind.to_string(), "package installed packages");
+        assert_eq!(ops[0].kind.to_string(), "installed packages");
     }
 
     #[test]
@@ -1605,7 +1681,7 @@ patterns = ["*One*", "*Two*", "*Three*"]
         let ops = appx_ops(&Fake::default().failing_provisioned());
         let line = ops
             .iter()
-            .find(|o| o.kind.to_string() == "package provisioned packages")
+            .find(|o| o.kind.to_string() == "provisioned packages")
             .unwrap();
         assert!(line.unverified);
         assert!(line.detail.starts_with("could not list"), "{}", line.detail);
@@ -1672,7 +1748,7 @@ patterns = ["*One*", "*Two*", "*Three*"]
         let markers = plan.items[0]
             .ops
             .iter()
-            .filter(|o| o.kind == OpKind::OtherProfiles)
+            .filter(|o| o.kind.to_string() == "other user profiles")
             .count();
         assert_eq!(markers, 2, "one per all-users step");
         assert!(plan.items[0].has_unread());
@@ -1690,7 +1766,7 @@ patterns = ["*One*", "*Two*", "*Three*"]
             plan.items[0]
                 .ops
                 .iter()
-                .all(|o| o.kind != OpKind::OtherProfiles)
+                .all(|o| o.kind.to_string() != "other user profiles")
         );
     }
 

@@ -20,7 +20,6 @@ pub const PROFILE_VARS: [(&str, &str); 3] = [
     ("%APPDATA%", "\\AppData\\Roaming"),
 ];
 
-/// `raw` starts with one of `PROFILE_VARS`, compared without case.
 pub fn profile_var(raw: &str) -> Option<(&'static str, &'static str)> {
     let upper = raw.to_ascii_uppercase();
     PROFILE_VARS

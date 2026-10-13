@@ -16,14 +16,18 @@ pub fn apply_plan(
         for op in &item.ops {
             let outcome = match op.state {
                 OpState::WillApply => run_op(&op.kind, sys),
+                // not seen is not the same as absent
+                OpState::Absent | OpState::AlreadyDone if op.unverified => {
+                    Outcome::Skipped(format!("not read: {}", op.detail))
+                }
                 OpState::Absent | OpState::AlreadyDone => {
                     report.tally.absent += 1;
                     continue;
                 }
-                OpState::NonRemovable => Outcome::Skipped(match &op.kind {
-                    OpKind::Unsupported { reason } => reason.clone(),
-                    _ => "part of Windows".into(),
-                }),
+                OpState::NonRemovable if op.detail.is_empty() => {
+                    Outcome::Skipped("part of Windows".into())
+                }
+                OpState::NonRemovable => Outcome::Skipped(op.detail.clone()),
                 OpState::NeedsElevation => Outcome::Skipped("needs elevation".into()),
             };
             let result = OpResult {
@@ -62,7 +66,7 @@ fn run_op(kind: &OpKind, sys: &mut dyn Apply) -> Outcome {
         OpKind::Delete { path } => sys.delete_path(path),
         OpKind::PackagePattern { .. }
         | OpKind::TaskPattern { .. }
-        | OpKind::OtherProfiles
+        | OpKind::NotListed { .. }
         | OpKind::Unsupported { .. } => Outcome::Skipped("nothing to apply".into()),
     }
 }
@@ -122,6 +126,29 @@ startup = "disabled"
         assert_eq!(report.tally.skipped, 1);
         assert_eq!(report.tally.absent, 1);
         assert_eq!(report.tally.failed, 0);
+    }
+
+    #[test]
+    fn what_could_not_be_read_is_skipped_not_counted_absent() {
+        let catalog = Catalog::parse("t", CATALOG).unwrap();
+        let sys = Fake::default().failing_packages();
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let report = apply_plan(&plan, &mut Recorder::default(), true, &mut |_| {});
+        assert_eq!(report.tally.absent, 0);
+        assert_eq!(report.tally.skipped, 1);
+        let line = &report.results[0];
+        assert_eq!(line.op, "installed packages");
+        assert!(
+            matches!(&line.outcome, Outcome::Skipped(why) if why.starts_with("not read: could not list")),
+            "{:?}",
+            line.outcome
+        );
     }
 
     #[test]

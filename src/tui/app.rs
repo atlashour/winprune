@@ -1,5 +1,5 @@
 use crate::catalog::{Category, Level, Risk};
-use crate::engine::{ItemStatus, OpResult, Plan, Report, Selection};
+use crate::engine::{ItemStatus, OpResult, Plan, PlannedItem, Report, Selection};
 use crate::handoff::Request;
 use crate::os::OsInfo;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -45,7 +45,6 @@ pub struct App {
     pub collapsed: HashSet<Category>,
     pub filter: String,
     pub editing_filter: bool,
-    /// List only the items applying would still change.
     pub only_pending: bool,
     pub detail_scroll: u16,
     pub dry_run: bool,
@@ -103,10 +102,28 @@ impl App {
         }
     }
 
+    /// Shown by the text filter and by `p`, which keeps what applying the selection
+    /// would still change. Category counts and category toggles see only these, so a
+    /// key never selects an item the list does not show.
+    fn visible(&self, item: &PlannedItem) -> bool {
+        let filter = self.filter.to_ascii_lowercase();
+        (!self.only_pending || (item.selected && item.status() == ItemStatus::Pending))
+            && (filter.is_empty()
+                || item.id.to_ascii_lowercase().contains(&filter)
+                || item.name.to_ascii_lowercase().contains(&filter))
+    }
+
+    fn members(&self, category: Category) -> impl Iterator<Item = (usize, &PlannedItem)> {
+        self.plan
+            .items
+            .iter()
+            .enumerate()
+            .filter(move |(_, i)| i.category == category && self.visible(i))
+    }
+
     pub fn category_counts(&self, category: Category) -> (usize, usize) {
-        let items = self.plan.items.iter().filter(|i| i.category == category);
-        let total = items.clone().count();
-        let selected = items.filter(|i| i.selected).count();
+        let total = self.members(category).count();
+        let selected = self.members(category).filter(|(_, i)| i.selected).count();
         (selected, total)
     }
 
@@ -119,23 +136,9 @@ impl App {
     }
 
     fn rebuild_rows(&mut self) {
-        let filter = self.filter.to_ascii_lowercase();
         let mut rows = Vec::new();
         for category in Category::ALL {
-            let members: Vec<usize> = self
-                .plan
-                .items
-                .iter()
-                .enumerate()
-                .filter(|(_, item)| item.category == category)
-                .filter(|(_, item)| !self.only_pending || item.status() == ItemStatus::Pending)
-                .filter(|(_, item)| {
-                    filter.is_empty()
-                        || item.id.to_ascii_lowercase().contains(&filter)
-                        || item.name.to_ascii_lowercase().contains(&filter)
-                })
-                .map(|(i, _)| i)
-                .collect();
+            let members: Vec<usize> = self.members(category).map(|(i, _)| i).collect();
             if members.is_empty() {
                 continue;
             }
@@ -158,6 +161,10 @@ impl App {
 
     fn reselect(&mut self) {
         self.plan.reselect(&self.selection);
+        // `p` depends on the selection, so what is listed can change with it
+        if self.only_pending {
+            self.rebuild_rows();
+        }
     }
 
     fn toggle_item(&mut self, index: usize) {
@@ -173,13 +180,7 @@ impl App {
     }
 
     fn set_category(&mut self, category: Category, on: bool) {
-        let ids: Vec<String> = self
-            .plan
-            .items
-            .iter()
-            .filter(|i| i.category == category)
-            .map(|i| i.id.clone())
-            .collect();
+        let ids: Vec<String> = self.members(category).map(|(_, i)| i.id.clone()).collect();
         for id in ids {
             if on {
                 self.selection.skip.remove(&id);

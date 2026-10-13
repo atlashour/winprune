@@ -1,5 +1,5 @@
 use crate::catalog::{Catalog, Level};
-use crate::engine::{self, Diff, Log, OpState, Plan, Selection, count};
+use crate::engine::{self, Diff, Log, Plan, Selection, count};
 use crate::handoff::{self, Request};
 use crate::os;
 use crate::system::Outcome;
@@ -82,24 +82,34 @@ pub struct Filter {
     #[arg(long, value_name = "FILE", global = true)]
     pub catalog: Option<PathBuf>,
     /// Only these item ids (comma separated), ignoring the level
-    #[arg(long, value_delimiter = ',', global = true)]
+    #[arg(long, value_delimiter = ',', value_parser = item_id, global = true)]
     pub only: Vec<String>,
     /// Leave these item ids out (comma separated)
-    #[arg(long, value_delimiter = ',', global = true)]
+    #[arg(long, value_delimiter = ',', value_parser = item_id, global = true)]
     pub skip: Vec<String>,
     /// Add these item ids on top of the level (comma separated)
-    #[arg(long, value_delimiter = ',', global = true)]
+    #[arg(long, value_delimiter = ',', value_parser = item_id, global = true)]
     pub add: Vec<String>,
     /// Folder written by the launcher for the elevated copy; see handoff.rs
     #[arg(long, value_name = "DIR", hide = true, global = true)]
     pub run_dir: Option<PathBuf>,
 }
 
+/// `--skip "a.b, c.d"` is meant as two ids, not one with a leading space.
+fn item_id(raw: &str) -> Result<String, String> {
+    Ok(raw.trim().to_string())
+}
+
 impl Filter {
     /// An id that is not in the catalog is a typo, and a mistyped --skip would apply
     /// the very item it was meant to keep out.
     fn unknown_ids(&self, catalog: &Catalog) -> Vec<String> {
-        let known: HashSet<&str> = catalog.items.iter().map(|i| i.id.as_str()).collect();
+        let known: HashSet<&str> = catalog
+            .items
+            .iter()
+            .map(|i| i.id.as_str())
+            .chain(catalog.disabled.iter().map(String::as_str))
+            .collect();
         [
             ("--only", &self.only),
             ("--skip", &self.skip),
@@ -108,7 +118,7 @@ impl Filter {
         .into_iter()
         .flat_map(|(flag, ids)| {
             ids.iter()
-                .filter(|id| !known.contains(id.as_str()))
+                .filter(|id| !id.is_empty() && !known.contains(id.as_str()))
                 .map(move |id| format!("{flag} {id}"))
         })
         .collect()
@@ -399,13 +409,7 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
             continue;
         }
         for op in &item.ops {
-            let tag = match op.state {
-                OpState::WillApply => "apply",
-                OpState::Absent => "absent",
-                OpState::AlreadyDone => "done",
-                OpState::NonRemovable => "keep",
-                OpState::NeedsElevation => "elev",
-            };
+            let tag = op.tag();
             let detail = if op.detail.is_empty() {
                 String::new()
             } else {
@@ -726,6 +730,21 @@ startup = \"manual\"
                 .unwrap_err()
                 .contains("onedrive.unistall")
         );
+    }
+
+    #[test]
+    fn ids_are_trimmed_and_overlay_disabled_ids_are_known() {
+        let cli = Cli::try_parse_from(["winprune", "plan", "--skip", "a.b, c.d,"]).unwrap();
+        assert_eq!(cli.filter.skip, vec!["a.b", "c.d", ""]);
+
+        let base = load_catalog(None).unwrap();
+        let id = base.items[0].id.clone();
+        let overlay = base
+            .with_overlay("o", &format!("[[item]]\nid = \"{id}\"\nenabled = false\n"))
+            .unwrap();
+        assert!(overlay.items.iter().all(|i| i.id != id));
+        let cli = Cli::try_parse_from(["winprune", "plan", "--skip", &id]).unwrap();
+        assert!(cli.filter.unknown_ids(&overlay).is_empty());
     }
 
     #[test]

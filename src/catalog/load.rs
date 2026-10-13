@@ -34,6 +34,8 @@ pub enum CatalogError {
 #[derive(Debug, Clone, Default)]
 pub struct Catalog {
     pub items: Vec<Item>,
+    /// Ids an overlay turned off: still known, so naming one is not a typo.
+    pub disabled: Vec<String>,
 }
 
 impl Catalog {
@@ -42,7 +44,10 @@ impl Catalog {
         for (name, text) in EMBEDDED {
             items.extend(parse_items(name, text)?);
         }
-        let catalog = Catalog { items };
+        let catalog = Catalog {
+            items,
+            disabled: Vec::new(),
+        };
         catalog.validate().map_err(CatalogError::Invalid)?;
         Ok(catalog)
     }
@@ -51,6 +56,7 @@ impl Catalog {
     pub fn parse(source_name: &str, text: &str) -> Result<Catalog, CatalogError> {
         let catalog = Catalog {
             items: parse_items(source_name, text)?,
+            disabled: Vec::new(),
         };
         catalog.validate().map_err(CatalogError::Invalid)?;
         Ok(catalog)
@@ -97,8 +103,10 @@ impl Catalog {
                     })?;
             items.push(item);
         }
+        let (items, disabled): (Vec<Item>, Vec<Item>) = items.into_iter().partition(|i| i.enabled);
         let catalog = Catalog {
-            items: items.into_iter().filter(|i| i.enabled).collect(),
+            items,
+            disabled: disabled.into_iter().map(|i| i.id).collect(),
         };
         catalog.validate().map_err(CatalogError::Invalid)?;
         Ok(catalog)

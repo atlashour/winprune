@@ -111,6 +111,9 @@ pub enum SysError {
     AccessDenied,
     #[error("profile hive is not loaded")]
     NotLoaded,
+    /// winprune has no way to reach this location at all, elevated or not.
+    #[error("not reachable for this profile")]
+    Unreachable,
     #[error("{0}")]
     Other(String),
 }

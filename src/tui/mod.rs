@@ -220,8 +220,14 @@ paths = ["%USERPROFILE%\\OneDrive"]
 "#;
 
     fn app(level: Level) -> App {
+        app_on(
+            level,
+            Fake::default().with_package("Microsoft.DemoApp", false),
+        )
+    }
+
+    fn app_on(level: Level, sys: Fake) -> App {
         let catalog = Catalog::parse("t", CATALOG).unwrap();
-        let sys = Fake::default().with_package("Microsoft.DemoApp", false);
         let selection = Selection::level(level);
         let plan = build_plan(&catalog, &selection, 26100, false, &sys);
         App::new(
@@ -294,6 +300,110 @@ paths = ["%USERPROFILE%\\OneDrive"]
         assert!(counts.contains("1 pending, 0 applied"), "{screen}");
         // the unselected absent item is not counted, as in `winprune diff`
         assert!(!counts.contains("absent"), "{screen}");
+    }
+
+    /// At medium the OneDrive folder item is not selected, though its folder exists.
+    fn app_with_unselected_pending() -> App {
+        let folder = crate::engine::expand_env("%USERPROFILE%\\OneDrive");
+        app_on(
+            Level::Medium,
+            Fake::default()
+                .with_package("Microsoft.DemoApp", false)
+                .with_path(&folder, 3, 300),
+        )
+    }
+
+    #[test]
+    fn p_lists_only_selected_items_that_are_pending() {
+        let mut a = app_with_unselected_pending();
+        assert!(render(&a).contains("[ ] Delete the folder"));
+        press(&mut a, KeyCode::Char('p'));
+        let screen = render(&a);
+        assert!(!screen.contains("Delete the folder"), "{screen}");
+        assert!(screen.contains("1 pending"), "{screen}");
+    }
+
+    const SAME_CATEGORY: &str = r#"
+[[item]]
+id = "appx.demo"
+name = "Demo app"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "appx"
+patterns = ["*Demo*"]
+
+[[item]]
+id = "appx.other"
+name = "Other app"
+category = "appx"
+level = "max"
+risk = "high"
+summary = "x"
+warning = "w"
+[[item.step]]
+kind = "appx"
+patterns = ["*Other*"]
+"#;
+
+    #[test]
+    fn category_keys_never_touch_items_the_list_hides() {
+        let catalog = Catalog::parse("t", SAME_CATEGORY).unwrap();
+        let sys = Fake::default()
+            .with_package("Microsoft.DemoApp", false)
+            .with_package("Microsoft.OtherApp", false);
+        let selection = Selection::level(Level::Medium);
+        let plan = build_plan(&catalog, &selection, 26100, false, &sys);
+        let mut a = App::new(
+            plan,
+            selection,
+            OsInfo {
+                build: 26100,
+                elevated: false,
+            },
+            None,
+        );
+        press(&mut a, KeyCode::Char('/'));
+        for c in "demo".chars() {
+            press(&mut a, KeyCode::Char(c));
+        }
+        press(&mut a, KeyCode::Enter);
+        assert!(!render(&a).contains("Other app"));
+        press(&mut a, KeyCode::Char('a'));
+        let other = a.plan.items.iter().find(|i| i.id == "appx.other").unwrap();
+        assert!(!other.selected, "a selected a hidden high-risk item");
+    }
+
+    #[test]
+    fn unread_ops_are_not_shown_as_plain_apply() {
+        let catalog = Catalog::parse(
+            "t",
+            "[[item]]\nid = \"privacy.reg\"\nname = \"Reg\"\ncategory = \"privacy\"\nlevel = \"medium\"\nrisk = \"low\"\nsummary = \"x\"\n[[item.step]]\nkind = \"registry\"\nhive = \"hklm\"\npath = \"SOFTWARE\\\\Demo\"\nname = \"Flag\"\ntype = \"dword\"\nvalue = 1\n",
+        )
+        .unwrap();
+        let sys = Fake::default().unreadable(&crate::system::RegRoot::Machine);
+        let selection = Selection::level(Level::Medium);
+        let plan = build_plan(&catalog, &selection, 26100, false, &sys);
+        let a = App::new(
+            plan,
+            selection,
+            OsInfo {
+                build: 26100,
+                elevated: false,
+            },
+            None,
+        );
+        let screen = render(&a);
+        assert!(screen.contains("apply? HKLM"), "{screen}");
+    }
+
+    #[test]
+    fn confirm_dialog_counts_in_the_singular_too() {
+        let mut a = app(Level::Medium);
+        press(&mut a, KeyCode::Enter);
+        assert!(render(&a).contains("1 item, 1 operation"));
     }
 
     #[test]

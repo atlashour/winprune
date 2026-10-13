@@ -323,15 +323,14 @@ fn draw_details(frame: &mut Frame, area: Rect, app: &App) {
         status_tag(item.status()),
     ]));
     for op in &item.ops {
-        let (tag, color) = match op.state {
-            OpState::WillApply => ("apply ", Color::Green),
-            OpState::Absent => ("absent", DIM),
-            OpState::AlreadyDone => ("done  ", DIM),
-            OpState::NonRemovable => ("keep  ", WARN),
-            OpState::NeedsElevation => ("elev  ", WARN),
+        let color = match op.state {
+            _ if op.unread() => WARN,
+            OpState::WillApply => Color::Green,
+            OpState::NonRemovable => WARN,
+            _ => DIM,
         };
         let mut spans = vec![
-            Span::styled(format!(" {tag} "), Style::new().fg(color)),
+            Span::styled(format!(" {:<6} ", op.tag()), Style::new().fg(color)),
             Span::raw(op.kind.to_string()),
         ];
         if !op.detail.is_empty() {
@@ -359,9 +358,13 @@ fn draw_confirm(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(Span::styled(
         format!(
-            "{} items, {} operations{}",
-            selected.len(),
-            app.plan.will_apply_count(),
+            "{}, {}{}",
+            count(selected.len() as u64, "item", "items"),
+            count(
+                app.plan.will_apply_count() as u64,
+                "operation",
+                "operations"
+            ),
             if app.dry_run { " (dry run)" } else { "" }
         ),
         Style::new().bold(),

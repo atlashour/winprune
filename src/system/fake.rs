@@ -192,6 +192,12 @@ impl Inspect for Fake {
         path: &str,
         name: &str,
     ) -> Result<Option<RegValue>, SysError> {
+        // as on Windows: the Default profile's UsrClass.dat is never mounted
+        if *root == RegRoot::DefaultProfile
+            && path.to_ascii_lowercase().starts_with("software\\classes\\")
+        {
+            return Err(SysError::Unreachable);
+        }
         if self.unreadable.contains(&root.to_string()) {
             return Err(SysError::NotLoaded);
         }
