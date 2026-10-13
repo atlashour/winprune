@@ -7,12 +7,12 @@ name = "Xbox app and Game Bar"
 category = "xbox"
 level = "high"
 risk = "low"
-summary = "Removes the Xbox app, Game Bar and the old Xbox Console Companion."
+summary = "Removes the Xbox app, Game Bar, the Edge Game Assist browser that Game Bar hosts, and the old Xbox Console Companion."
 warning = "Game Pass and Store games are installed through the Xbox app; without it they have to come from elsewhere."
 
 [[item.step]]
 kind = "appx"
-patterns = ["*Microsoft.GamingApp*", "*XboxGamingOverlay*", "*XboxGameOverlay*", "*Microsoft.XboxApp*"]
+patterns = ["*Microsoft.GamingApp*", "*XboxGamingOverlay*", "*XboxGameOverlay*", "*Microsoft.XboxApp*", "*Microsoft.Edge.GameAssist*"]
 
 [[item]]
 id = "xbox.core"
