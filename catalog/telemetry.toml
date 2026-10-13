@@ -140,7 +140,7 @@ category = "telemetry"
 level = "high"
 risk = "low"
 summary = "Disables the usage reporting tasks of the controlled feature rollout system. The rollout tasks themselves stay on so kill switches for broken features still arrive."
-warning = "Nothing visible changes. Listed at high because these tasks are part of the update plumbing."
+warning = "Nothing visible changes. Listed at high because these tasks are part of the update plumbing. Windows has been seen turning UsageDataReporting and UsageDataFlushing back on within weeks; winprune diff shows when that happens."
 
 [[item.step]]
 kind = "task"
@@ -249,6 +249,25 @@ kind = "service"
 names = ["WSAIFabricSvc"]
 startup = "manual"
 
+# WindowsCopilot.admx (26300) supports it on Pro, Enterprise and Education; the
+# WindowsAI Policy CSP page lists it as Insider only for now.
+[[item]]
+id = "telemetry.settings-agent"
+name = "Settings agent"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Turns off the AI agent that answers natural language searches in Settings. Settings keeps its normal search. A no-op on machines without Copilot+ hardware."
+windows = { min_build = 26100 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI"
+name = "DisableSettingsAgent"
+type = "dword"
+value = 1
+
 [[item]]
 id = "telemetry.app-ai"
 name = "AI features in Notepad and Paint"
@@ -289,6 +308,26 @@ path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Paint"
 name = "DisableImageCreator"
 type = "dword"
 value = 1
+
+# AppPrivacy.admx (26300), Settings > Privacy > Text and image generation.
+# 0 user in control, 1 force allow, 2 force deny, as for every LetAppsAccess policy.
+[[item]]
+id = "telemetry.system-ai-models"
+name = "App access to the Windows AI models"
+category = "telemetry"
+level = "high"
+risk = "medium"
+summary = "Denies every app access to the on-device text and image generation models of Windows by policy."
+warning = "Apps built on the Windows AI APIs lose their generative features, and the switch in Settings is locked."
+windows = { min_build = 26100 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy"
+name = "LetAppsAccessSystemAIModels"
+type = "dword"
+value = 2
 
 [[item]]
 id = "telemetry.error-reporting"
