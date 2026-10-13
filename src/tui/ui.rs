@@ -1,6 +1,6 @@
 use super::app::{App, Pane, Row, Screen};
 use crate::catalog::{Level, Risk};
-use crate::engine::{OpState, PlannedItem};
+use crate::engine::{ItemStatus, OpState, PlannedItem};
 use crate::system::Outcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -114,6 +114,16 @@ fn risk_tag(risk: Risk) -> Span<'static> {
     Span::styled(format!("risk {text:<6}"), Style::new().fg(color))
 }
 
+/// What applying this item would still do here, read from the plan alone.
+fn status_tag(status: ItemStatus) -> Span<'static> {
+    let color = match status {
+        ItemStatus::Pending => Color::Green,
+        ItemStatus::Unconfirmed | ItemStatus::Unverified | ItemStatus::Blocked => WARN,
+        ItemStatus::Applied | ItemStatus::Absent | ItemStatus::NotApplicable => DIM,
+    };
+    Span::styled(format!("{:<8}", status.tag()), Style::new().fg(color))
+}
+
 fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
     let width = area.width.saturating_sub(2) as usize;
     let items: Vec<ListItem> = app
@@ -154,7 +164,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
 
 fn item_line(item: &PlannedItem, width: usize) -> ListItem<'static> {
     let mark = if item.selected { "[x]" } else { "[ ]" };
-    let tags_width = 6 + 1 + 11;
+    let tags_width = 8 + 1 + 6 + 1 + 11;
     let name_width = width.saturating_sub(4 + 1 + tags_width + 3);
     let mut name = item.name.clone();
     if name.chars().count() > name_width {
@@ -172,6 +182,8 @@ fn item_line(item: &PlannedItem, width: usize) -> ListItem<'static> {
     ListItem::new(Line::from(vec![
         Span::raw(format!("   {mark} ")),
         Span::styled(format!("{name:<name_width$} "), name_style),
+        status_tag(item.status()),
+        Span::raw(" "),
         level_tag(item.level),
         Span::raw(" "),
         risk_tag(item.risk),
@@ -238,10 +250,10 @@ fn draw_details(frame: &mut Frame, area: Rect, app: &App) {
         )));
     }
     lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(
-        "On this machine",
-        Style::new().fg(ACCENT),
-    )));
+    lines.push(Line::from(vec![
+        Span::styled("On this machine  ", Style::new().fg(ACCENT)),
+        status_tag(item.status()),
+    ]));
     for op in &item.ops {
         let (tag, color) = match op.state {
             OpState::WillApply => ("apply ", Color::Green),

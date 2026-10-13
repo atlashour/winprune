@@ -272,6 +272,18 @@ paths = ["%USERPROFILE%\\OneDrive"]
     }
 
     #[test]
+    fn select_screen_shows_what_each_item_would_still_do() {
+        let screen = render(&app(Level::Medium));
+        let demo = screen.lines().find(|l| l.contains("[x] Demo app")).unwrap();
+        assert!(demo.contains("pending"), "{screen}");
+        let folder = screen
+            .lines()
+            .find(|l| l.contains("[ ] Delete the folder"))
+            .unwrap();
+        assert!(folder.contains("absent"), "{screen}");
+    }
+
+    #[test]
     fn select_screen_shows_a_notice_until_a_key_is_pressed() {
         let mut a = app(Level::Medium);
         a.notice = Some("the UAC prompt was refused".to_string());
