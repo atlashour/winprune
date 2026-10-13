@@ -19,6 +19,14 @@ candidates = ["%SystemRoot%\\SysWOW64\\OneDriveSetup.exe", "%SystemRoot%\\System
 args = ["/uninstall"]
 # 0x8004069B: the setup found no OneDrive to uninstall for this account.
 skip_exit_codes = [-2147219813]
+# OneDriveSetup.exe stays in the system folder after uninstalling, so its presence
+# says nothing; the client itself does. Per-user installs live in LocalAppData,
+# per-machine installs (/allusers) under Program Files.
+when_present = [
+    "%LOCALAPPDATA%\\Microsoft\\OneDrive\\OneDrive.exe",
+    "%ProgramFiles%\\Microsoft OneDrive\\OneDrive.exe",
+    "%ProgramFiles(x86)%\\Microsoft OneDrive\\OneDrive.exe",
+]
 
 [[item.step]]
 kind = "delete"
