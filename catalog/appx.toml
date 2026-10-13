@@ -391,6 +391,11 @@ patterns = [
     "*Flipboard*", "*PandoraMediaInc*", "*iHeartRadio*", "*AdobePhotoshopExpress*",
     "*EclipseManager*", "*ActiproSoftwareLLC*", "*TuneInRadio*", "*SlingTV*", "*Asphalt*",
     "*HiddenCity*", "*MarchofEmpires*", "*FarmVille*", "*CaesarsSlots*", "*COOKINGFEVER*",
+    # seen on OEM and consumer images, list from Win11Debloat Config/Apps.json
+    "*ACGMediaPlayer*", "*AutodeskSketchBook*", "*CyberLinkMediaSuiteEssentials*",
+    "*DrawboardPDF*", "*NYTCrossword*", "*OneCalendar*", "*PhototasticCollage*",
+    "*PicsArt-PhotoStudio*", "*PolarrPhotoEditorAcademicEdition*", "*RoyalRevolt*",
+    "*Sidia.LiveWallpaper*", "*WinZipUniversal*",
 ]
 
 # Windows 11 24H2 policy that removes inbox Store packages when a profile is created or at
