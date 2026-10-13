@@ -318,7 +318,7 @@ category = "telemetry"
 level = "high"
 risk = "medium"
 summary = "Denies every app access to the on-device text and image generation models of Windows by policy."
-warning = "Apps built on the Windows AI APIs lose their generative features, and the switch in Settings is locked."
+warning = "Apps built on the Windows AI APIs lose their generative features, and the switch in Settings is locked. That includes the Local AI Manager that Microsoft 365 registers (package aimgr), which Office puts back on update; this policy is what keeps it away from the models."
 windows = { min_build = 26100 }
 
 [[item.step]]
