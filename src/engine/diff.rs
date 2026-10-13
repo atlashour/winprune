@@ -89,6 +89,30 @@ pub struct DiffCounts {
     pub not_applicable: usize,
 }
 
+impl DiffCounts {
+    fn add(&mut self, status: ItemStatus) {
+        *match status {
+            ItemStatus::Pending => &mut self.pending,
+            ItemStatus::Unconfirmed => &mut self.unconfirmed,
+            ItemStatus::Unverified => &mut self.unverified,
+            ItemStatus::Applied => &mut self.applied,
+            ItemStatus::Blocked => &mut self.blocked,
+            ItemStatus::Absent => &mut self.absent,
+            ItemStatus::NotApplicable => &mut self.not_applicable,
+        } += 1;
+    }
+
+    /// The selected items of a plan. Items for another build are never in a plan, so
+    /// only `build_diff` counts those.
+    pub fn of_plan(plan: &Plan) -> DiffCounts {
+        let mut counts = DiffCounts::default();
+        for item in plan.selected() {
+            counts.add(item.status());
+        }
+        counts
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Diff {
     pub schema: u32,
@@ -132,15 +156,7 @@ pub fn build_diff(catalog: &Catalog, selection: &Selection, plan: &Plan) -> Diff
 
     let mut counts = DiffCounts::default();
     for item in &items {
-        *match item.status {
-            ItemStatus::Pending => &mut counts.pending,
-            ItemStatus::Unconfirmed => &mut counts.unconfirmed,
-            ItemStatus::Unverified => &mut counts.unverified,
-            ItemStatus::Applied => &mut counts.applied,
-            ItemStatus::Blocked => &mut counts.blocked,
-            ItemStatus::Absent => &mut counts.absent,
-            ItemStatus::NotApplicable => &mut counts.not_applicable,
-        } += 1;
+        counts.add(item.status);
     }
 
     Diff {

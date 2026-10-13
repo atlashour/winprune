@@ -1,6 +1,6 @@
 use super::app::{App, Pane, Row, Screen};
 use crate::catalog::{Level, Risk};
-use crate::engine::{ItemStatus, OpState, PlannedItem};
+use crate::engine::{DiffCounts, ItemStatus, OpState, PlannedItem, count};
 use crate::system::Outcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -56,15 +56,49 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(app.plan.level.to_string(), Style::new().fg(ACCENT).bold()),
         Span::styled(
             format!(
-                " | {} items, {} operations ",
-                app.plan.selected().count(),
-                app.plan.will_apply_count()
+                " | {}, {} ",
+                count(app.plan.selected().count() as u64, "item", "items"),
+                count(
+                    app.plan.will_apply_count() as u64,
+                    "operation",
+                    "operations"
+                )
             ),
             Style::new().fg(DIM),
         ),
         mode,
     ]);
     frame.render_widget(Paragraph::new(line), area);
+}
+
+/// Select screen keys in display order, each with its priority (0 = always shown).
+/// A narrow terminal drops the least needed ones; the arrows also fold, for example.
+const SELECT_KEYS: [(&str, u8); 10] = [
+    ("space toggle", 0),
+    ("a/n all/none", 6),
+    ("1/2/3 level", 2),
+    ("h/l fold", 8),
+    ("/ filter", 4),
+    ("p pending", 3),
+    ("d dry run", 5),
+    ("tab details", 7),
+    ("enter continue", 0),
+    ("q quit", 0),
+];
+
+fn key_hints(width: usize) -> String {
+    let line = |max: u8| -> String {
+        SELECT_KEYS
+            .iter()
+            .filter(|(_, p)| *p <= max)
+            .map(|(k, _)| format!(" {k} "))
+            .collect()
+    };
+    (0..=8)
+        .rev()
+        .map(line)
+        .find(|l| l.len() <= width)
+        .unwrap_or_else(|| line(0))
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
@@ -76,11 +110,10 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
     let text = match app.screen {
-        Screen::Select if app.editing_filter => format!(" filter: {}_   (Enter keep, Esc clear)", app.filter),
-        Screen::Select => {
-            " space toggle  a/n all/none  1/2/3 level  h/l fold  / filter  d dry run  tab details  enter continue  q quit"
-                .to_string()
+        Screen::Select if app.editing_filter => {
+            format!(" filter: {}_   (Enter keep, Esc clear)", app.filter)
         }
+        Screen::Select => key_hints(usize::from(area.width)),
         Screen::Confirm if app.high_risk_selected() => " type yes then enter  esc back".to_string(),
         Screen::Confirm => " enter apply  esc back".to_string(),
         Screen::Progress => " applying, please wait".to_string(),
@@ -124,6 +157,33 @@ fn status_tag(status: ItemStatus) -> Span<'static> {
     Span::styled(format!("{:<8}", status.tag()), Style::new().fg(color))
 }
 
+/// The selected items by status, the same numbers `winprune diff` prints. Pending and
+/// applied always show; the rest only when there is something to say.
+fn status_counts(c: &DiffCounts) -> Line<'static> {
+    let mut parts = vec![
+        Span::styled(
+            format!(" {} pending", c.pending),
+            Style::new().fg(Color::Green),
+        ),
+        Span::styled(format!(", {} applied", c.applied), Style::new().fg(DIM)),
+    ];
+    for (n, label, color) in [
+        (c.unconfirmed, "applied?", WARN),
+        (c.unverified, "unknown", WARN),
+        (c.blocked, "blocked", WARN),
+        (c.absent, "absent", DIM),
+    ] {
+        if n > 0 {
+            parts.push(Span::styled(
+                format!(", {n} {label}"),
+                Style::new().fg(color),
+            ));
+        }
+    }
+    parts.push(Span::raw(" "));
+    Line::from(parts)
+}
+
 fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
     let width = area.width.saturating_sub(2) as usize;
     let items: Vec<ListItem> = app
@@ -144,10 +204,17 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
             Row::Item(i) => item_line(&app.plan.items[*i], width),
         })
         .collect();
-    let title = if app.filter.is_empty() {
+    let mut narrowed = Vec::new();
+    if app.only_pending {
+        narrowed.push("only pending".to_string());
+    }
+    if !app.filter.is_empty() {
+        narrowed.push(format!("filter: {}", app.filter));
+    }
+    let title = if narrowed.is_empty() {
         " Items ".to_string()
     } else {
-        format!(" Items (filter: {}) ", app.filter)
+        format!(" Items ({}) ", narrowed.join(", "))
     };
     let border = if app.pane == Pane::List { ACCENT } else { DIM };
     let list = List::new(items)
@@ -155,6 +222,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
+                .title_bottom(status_counts(&DiffCounts::of_plan(&app.plan)))
                 .border_style(Style::new().fg(border)),
         )
         .highlight_style(Style::new().add_modifier(Modifier::REVERSED));

@@ -236,7 +236,11 @@ paths = ["%USERPROFILE%\\OneDrive"]
     }
 
     fn render(app: &App) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        render_at(app, 100)
+    }
+
+    fn render_at(app: &App, width: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
         terminal.draw(|f| ui::draw(f, app)).unwrap();
         let buffer = terminal.backend().buffer().clone();
         let mut out = String::new();
@@ -281,6 +285,40 @@ paths = ["%USERPROFILE%\\OneDrive"]
             .find(|l| l.contains("[ ] Delete the folder"))
             .unwrap();
         assert!(folder.contains("absent"), "{screen}");
+    }
+
+    #[test]
+    fn select_screen_counts_the_selected_items_by_status() {
+        let screen = render(&app(Level::Medium));
+        let counts = screen.lines().find(|l| l.contains("pending,")).unwrap();
+        assert!(counts.contains("1 pending, 0 applied"), "{screen}");
+        // the unselected absent item is not counted, as in `winprune diff`
+        assert!(!counts.contains("absent"), "{screen}");
+    }
+
+    #[test]
+    fn select_help_line_always_ends_with_quit() {
+        for width in [80, 100, 140] {
+            let screen = render_at(&app(Level::Medium), width);
+            let footer = screen.lines().last().unwrap().trim_end();
+            assert!(footer.ends_with("q quit"), "{width}: {footer}");
+        }
+        assert!(render_at(&app(Level::Medium), 140).contains("h/l fold"));
+        assert!(render(&app(Level::Medium)).contains("1 item, 1 operation "));
+    }
+
+    #[test]
+    fn p_shows_only_pending_items_and_back() {
+        let mut a = app(Level::Max);
+        press(&mut a, KeyCode::Char('p'));
+        let screen = render(&a);
+        assert!(screen.contains("Demo app"), "{screen}");
+        assert!(!screen.contains("Delete the folder"), "{screen}");
+        assert!(screen.contains("only pending"), "{screen}");
+        press(&mut a, KeyCode::Char('p'));
+        let screen = render(&a);
+        assert!(screen.contains("Delete the folder"), "{screen}");
+        assert!(!screen.contains("only pending"), "{screen}");
     }
 
     #[test]

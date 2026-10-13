@@ -9,7 +9,7 @@ mod plan;
 mod report;
 
 pub use apply::apply_plan;
-pub use diff::{Diff, ItemStatus, build_diff};
+pub use diff::{Diff, DiffCounts, ItemStatus, build_diff};
 pub use expand::expand_env;
 pub use log::Log;
 pub use plan::{OpState, Plan, PlannedItem, Selection, build_plan, count};

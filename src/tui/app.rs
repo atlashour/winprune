@@ -1,5 +1,5 @@
 use crate::catalog::{Category, Level, Risk};
-use crate::engine::{OpResult, Plan, Report, Selection};
+use crate::engine::{ItemStatus, OpResult, Plan, Report, Selection};
 use crate::handoff::Request;
 use crate::os::OsInfo;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -45,6 +45,8 @@ pub struct App {
     pub collapsed: HashSet<Category>,
     pub filter: String,
     pub editing_filter: bool,
+    /// List only the items applying would still change.
+    pub only_pending: bool,
     pub detail_scroll: u16,
     pub dry_run: bool,
     pub confirm_input: String,
@@ -73,6 +75,7 @@ impl App {
             collapsed: HashSet::new(),
             filter: String::new(),
             editing_filter: false,
+            only_pending: false,
             detail_scroll: 0,
             dry_run: false,
             confirm_input: String::new(),
@@ -125,6 +128,7 @@ impl App {
                 .iter()
                 .enumerate()
                 .filter(|(_, item)| item.category == category)
+                .filter(|(_, item)| !self.only_pending || item.status() == ItemStatus::Pending)
                 .filter(|(_, item)| {
                     filter.is_empty()
                         || item.id.to_ascii_lowercase().contains(&filter)
@@ -260,6 +264,11 @@ impl App {
             KeyCode::Char('3') => self.set_level(Level::Max),
             KeyCode::Char('d') => self.dry_run = !self.dry_run,
             KeyCode::Char('/') => self.editing_filter = true,
+            KeyCode::Char('p') => {
+                self.only_pending = !self.only_pending;
+                self.rebuild_rows();
+                self.move_to_first_item();
+            }
             KeyCode::Tab => {
                 self.pane = match self.pane {
                     Pane::List => Pane::Details,
