@@ -381,6 +381,7 @@ category = "appx"
 level = "medium"
 risk = "low"
 summary = "Removes sponsored packages that consumer and OEM images preinstall: Spotify, TikTok, Disney+, Netflix, games and the like. Absent on clean images. OEM hardware helpers such as Dolby are not touched."
+warning = "A package is matched by name, so a copy you installed or bought from the Store goes too; a purchase can be installed again from the Store with the same account. Desktop versions installed outside the Store are not touched."
 
 [[item.step]]
 kind = "appx"
