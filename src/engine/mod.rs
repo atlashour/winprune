@@ -2,12 +2,14 @@
 //! through the `Apply` trait. Both halves are pure with respect to Windows.
 
 mod apply;
+mod diff;
 mod expand;
 mod log;
 mod plan;
 mod report;
 
 pub use apply::apply_plan;
+pub use diff::{Diff, build_diff};
 pub use expand::expand_env;
 pub use log::Log;
 pub use plan::{OpState, Plan, PlannedItem, Selection, build_plan};

@@ -6,4 +6,6 @@ mod model;
 mod validate;
 
 pub use load::Catalog;
-pub use model::{Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction};
+pub use model::{
+    Applicability, Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction,
+};

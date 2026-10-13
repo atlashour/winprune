@@ -1,5 +1,5 @@
 use crate::catalog::{Catalog, Level};
-use crate::engine::{self, Log, OpState, Plan, Selection};
+use crate::engine::{self, Diff, Log, OpState, Plan, Selection};
 use crate::handoff::{self, Request};
 use crate::os;
 use crate::system::Outcome;
@@ -32,6 +32,15 @@ pub enum Command {
         #[arg(long)]
         json: bool,
         /// Show inspection details for unselected items too
+        #[arg(long)]
+        all: bool,
+    },
+    /// Report what applying the selection would still change here, read-only
+    Diff {
+        /// Print the result as JSON
+        #[arg(long)]
+        json: bool,
+        /// List every operation that could not be read, not only a count
         #[arg(long)]
         all: bool,
     },
@@ -242,6 +251,20 @@ pub fn run(cli: Cli) -> i32 {
             }
             EXIT_OK
         }
+        Some(Command::Diff { json, all }) => {
+            let selection = cli.filter.selection();
+            let plan = build(&catalog, &cli.filter, &ctx);
+            let diff = engine::build_diff(&catalog, &selection, &plan);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&diff).expect("diff serialises")
+                );
+            } else {
+                print!("{}", render_diff(&diff, all));
+            }
+            EXIT_OK
+        }
         Some(Command::Apply { dry_run, yes }) => {
             apply_command(&catalog, &cli.filter, &ctx, dry_run, yes)
         }
@@ -372,6 +395,70 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
     out
 }
 
+pub fn render_diff(diff: &Diff, all: bool) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "Windows build {}, {}, level {}: what applying it would still change here",
+        diff.build,
+        if diff.elevated {
+            "elevated"
+        } else {
+            "not elevated"
+        },
+        diff.level,
+    );
+    let mut category = None;
+    for item in &diff.items {
+        if category != Some(item.category) {
+            category = Some(item.category);
+            let _ = writeln!(
+                out,
+                "
+{}",
+                item.category.title()
+            );
+        }
+        let _ = writeln!(
+            out,
+            "  {:<8} {:<34} {:<6} {}",
+            item.status.tag(),
+            item.id,
+            item.level,
+            item.reason.as_deref().unwrap_or("")
+        );
+        for line in &item.pending {
+            let _ = writeln!(out, "             {line}");
+        }
+        if all {
+            for line in &item.unverified {
+                let _ = writeln!(out, "             not read: {line}");
+            }
+        } else if !item.unverified.is_empty() {
+            let _ = writeln!(
+                out,
+                "             {} operations could not be read",
+                item.unverified.len()
+            );
+        }
+    }
+    let c = diff.counts;
+    let _ = writeln!(
+        out,
+        "
+{} pending, {} applied, {} applied where readable, {} unknown, {} blocked by Windows, {} absent, {} not for this build",
+        c.pending, c.applied, c.unconfirmed, c.unverified, c.blocked, c.absent, c.not_applicable
+    );
+    if c.unverified + c.unconfirmed > 0 && !diff.elevated {
+        let _ = writeln!(
+            out,
+            "run it from an elevated console to read provisioned packages and the Default profile"
+        );
+    }
+    out
+}
+
 fn apply_command(
     catalog: &Catalog,
     filter: &Filter,
@@ -473,6 +560,57 @@ mod tests {
         assert_eq!(cli.filter.level, Level::Max);
         assert_eq!(cli.filter.skip, vec!["a.b", "c.d"]);
         assert!(matches!(cli.command, Some(Command::Plan { .. })));
+    }
+
+    #[test]
+    fn diff_takes_the_filter_and_json() {
+        let cli = Cli::try_parse_from([
+            "winprune", "diff", "--level", "high", "--json", "--skip", "a.b",
+        ])
+        .unwrap();
+        assert_eq!(cli.filter.level, Level::High);
+        assert_eq!(cli.filter.skip, vec!["a.b"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Diff {
+                json: true,
+                all: false
+            })
+        ));
+    }
+
+    #[test]
+    fn diff_text_lists_pending_operations_and_counts() {
+        let catalog = Catalog::parse(
+            "t",
+            "[[item]]
+id = \"services.demo\"
+name = \"Demo\"
+category = \"services\"
+level = \"medium\"
+risk = \"low\"
+summary = \"x\"
+[[item.step]]
+kind = \"service\"
+names = [\"DemoSvc\"]
+startup = \"manual\"
+",
+        )
+        .unwrap();
+        let sys = crate::system::fake::Fake::default().with_service(
+            "DemoSvc",
+            crate::catalog::Startup::Automatic,
+            false,
+        );
+        let selection = Selection::level(Level::Medium);
+        let plan = engine::build_plan(&catalog, &selection, 26100, false, &sys);
+        let text = render_diff(&engine::build_diff(&catalog, &selection, &plan), false);
+        assert!(text.contains("pending  services.demo"), "{text}");
+        assert!(
+            text.contains("service DemoSvc -> manual (currently automatic)"),
+            "{text}"
+        );
+        assert!(text.contains("1 pending, 0 applied"), "{text}");
     }
 
     #[test]
