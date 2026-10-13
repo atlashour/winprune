@@ -140,7 +140,7 @@ category = "telemetry"
 level = "high"
 risk = "low"
 summary = "Disables the usage reporting tasks of the controlled feature rollout system. The rollout tasks themselves stay on so kill switches for broken features still arrive."
-warning = "Nothing visible changes. Listed at high because these tasks are part of the update plumbing. Windows has been seen turning UsageDataReporting and UsageDataFlushing back on within weeks; winprune diff shows when that happens."
+warning = "Nothing visible changes. Listed at high because these tasks are part of the update plumbing. A build upgrade has been seen turning UsageDataReporting and UsageDataFlushing back on (build 26200 to 26300); winprune diff shows when that happens."
 
 [[item.step]]
 kind = "task"
@@ -250,7 +250,9 @@ names = ["WSAIFabricSvc"]
 startup = "manual"
 
 # WindowsCopilot.admx (26300) supports it on Pro, Enterprise and Education; the
-# WindowsAI Policy CSP page lists it as Insider only for now.
+# WindowsAI Policy CSP page lists it as Insider only, without Pro, for now. The agent
+# itself needs a Copilot+ PC and 24H2 with KB5062660:
+# https://learn.microsoft.com/windows/configuration/settings/agent
 [[item]]
 id = "telemetry.settings-agent"
 name = "Settings agent"

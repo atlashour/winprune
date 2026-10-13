@@ -304,7 +304,9 @@ name = "HideRecommendedPersonalizedSites"
 type = "dword"
 value = 1
 
-# AccountNotifications.admx, user policy, honoured on Pro (Notifications Policy CSP).
+# AccountNotifications.admx, user policy, Pro, Enterprise and Education on 24H2 and later:
+# https://learn.microsoft.com/windows/client-management/mdm/policy-csp-notifications#disableaccountnotifications
+# Start_AccountNotifications above is the matching Settings switch.
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
@@ -314,7 +316,8 @@ name = "DisableAccountNotifications"
 type = "dword"
 value = 1
 
-# The Settings switches behind the policy above and the "suggested" toasts.
+# "Show me notifications in the Settings app" and the "Suggested" toasts that advertise
+# Microsoft services, as set by Win11Debloat Regfiles/Disable_Windows_Suggestions.reg.
 [[item.step]]
 kind = "registry"
 hive = "hkcu"
@@ -395,7 +398,9 @@ name = "DisableSpotlightCollectionOnDesktop"
 type = "dword"
 value = 1
 
-# Explorer.admx (26300), Windows 11 22H2 and later.
+# Explorer.admx (26300), Windows 11 22H2 and later, Pro included. The ADMX display name
+# and help read as the opposite of the value; the CSP settles it, 1 stops the requests:
+# https://learn.microsoft.com/windows/client-management/mdm/policy-csp-fileexplorer#disablegraphrecentitems
 [[item]]
 id = "privacy.explorer-cloud-files"
 name = "Cloud file suggestions in File Explorer"
