@@ -22,6 +22,14 @@ pub fn info(path: &Path) -> Result<Option<PathInfo>, SysError> {
     Ok(Some(total))
 }
 
+pub fn exists(path: &Path) -> Result<bool, SysError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(SysError::Other(e.to_string())),
+    }
+}
+
 fn walk(dir: &Path, total: &mut PathInfo) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;

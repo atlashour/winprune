@@ -104,6 +104,10 @@ impl Inspect for WindowsSystem {
         files::info(path)
     }
 
+    fn exists(&self, path: &Path) -> Result<bool, SysError> {
+        files::exists(path)
+    }
+
     fn user_profiles(&self) -> Result<Vec<UserProfile>, SysError> {
         profiles::list()
     }

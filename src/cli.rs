@@ -380,19 +380,30 @@ pub fn render_plan(plan: &Plan, all: bool) -> String {
         }
     }
     let selected = plan.selected().count();
-    let elevation = plan.selected().filter(|i| i.needs_elevation()).count();
+    let unread = plan.selected().filter(|i| i.has_unread()).count();
     let _ = writeln!(
         out,
-        "\n{selected} items selected, {} operations to apply",
-        plan.will_apply_count()
+        "\n{} selected, {} to apply",
+        count(selected, "item", "items"),
+        count(plan.will_apply_count(), "operation", "operations")
     );
-    if elevation > 0 {
+    if unread > 0 {
         let _ = writeln!(
             out,
-            "{elevation} items could not be fully inspected without elevation"
+            "{} could not be fully inspected{}",
+            count(unread, "item", "items"),
+            if plan.elevated {
+                ""
+            } else {
+                "; an elevated run reads provisioned packages and the Default profile"
+            }
         );
     }
     out
+}
+
+fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 pub fn render_diff(diff: &Diff, all: bool) -> String {
@@ -413,12 +424,7 @@ pub fn render_diff(diff: &Diff, all: bool) -> String {
     for item in &diff.items {
         if category != Some(item.category) {
             category = Some(item.category);
-            let _ = writeln!(
-                out,
-                "
-{}",
-                item.category.title()
-            );
+            let _ = writeln!(out, "\n{}", item.category.title());
         }
         let _ = writeln!(
             out,
@@ -438,16 +444,15 @@ pub fn render_diff(diff: &Diff, all: bool) -> String {
         } else if !item.unverified.is_empty() {
             let _ = writeln!(
                 out,
-                "             {} operations could not be read",
-                item.unverified.len()
+                "             {} could not be read",
+                count(item.unverified.len(), "operation", "operations")
             );
         }
     }
     let c = diff.counts;
     let _ = writeln!(
         out,
-        "
-{} pending, {} applied, {} applied where readable, {} unknown, {} blocked by Windows, {} absent, {} not for this build",
+        "\n{} pending, {} applied, {} applied where readable, {} unknown, {} blocked by Windows, {} absent, {} not for this build",
         c.pending, c.applied, c.unconfirmed, c.unverified, c.blocked, c.absent, c.not_applicable
     );
     if c.unverified + c.unconfirmed > 0 && !diff.elevated {

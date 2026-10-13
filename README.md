@@ -45,10 +45,11 @@ tooling.
 
 `diff` reads the machine the same way `plan` does and sorts every item of the level
 into pending (applying would still change something), applied, absent (nothing it
-acts on is here, removed earlier or never shipped), blocked (only parts Windows keeps
-are left) and not for this build. Without elevation the provisioned packages and the
-Default profile cannot be read; items that depend on them show as `applied?` when
-everything readable is applied, or `unknown`. `diff --json` gives the same for
+acts on is here, removed earlier or never shipped), blocked (nothing left to apply,
+but parts Windows keeps remain) and not for this build. Without elevation the
+provisioned packages and the Default profile cannot be read; items that depend on
+them, or on anything else that could not be read, show as `applied?` when nothing
+readable is pending, or `unknown`. `diff --json` gives the same for
 tooling, `diff --all` lists what could not be read. The terminal UI shows the same
 status next to each item.
 

@@ -127,7 +127,9 @@ pub trait Inspect {
     ) -> Result<Option<RegValue>, SysError>;
     fn tasks(&self) -> Result<Vec<TaskInfo>, SysError>;
     fn running_processes(&self) -> Result<Vec<ProcessInfo>, SysError>;
+    /// File count and size; walks a whole folder tree, so only for what is shown.
     fn path_info(&self, path: &Path) -> Result<Option<PathInfo>, SysError>;
+    fn exists(&self, path: &Path) -> Result<bool, SysError>;
     /// Every account with a profile folder, loaded or not.
     fn user_profiles(&self) -> Result<Vec<UserProfile>, SysError>;
     /// The account winprune is acting for: the one that started it, even after the

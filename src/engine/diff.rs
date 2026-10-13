@@ -1,22 +1,23 @@
 //! What applying a selection would still change on this machine. Built from the same
 //! plan apply walks, so it reads nothing the plan did not read and writes nothing.
 
-use super::plan::{Op, OpKind, OpState, Plan, PlannedItem, Selection};
+use super::plan::{Op, OpState, Plan, PlannedItem, Selection};
 use crate::catalog::{Applicability, Catalog, Category, Level, Risk};
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemStatus {
     /// Applying would change something.
     Pending,
-    /// Applied wherever the state could be read; the rest could not be read.
+    /// Nothing pending wherever the state could be read; the rest could not be read.
     Unconfirmed,
     /// Nothing known to be pending, and nothing could be confirmed either.
     Unverified,
     /// Every target is already in the wanted state.
     Applied,
-    /// Only parts Windows will not let go of are left.
+    /// Nothing left to apply, but parts Windows will not let go of remain.
     Blocked,
     /// Nothing the item acts on exists here: removed earlier or never shipped.
     Absent,
@@ -39,36 +40,24 @@ impl ItemStatus {
 }
 
 impl PlannedItem {
-    /// Kills are ignored: a running process is a precondition of another op, not a
-    /// state the item leaves behind.
     pub fn status(&self) -> ItemStatus {
-        let ops = || {
-            self.ops
-                .iter()
-                .filter(|op| !matches!(op.kind, OpKind::Kill { .. }))
-        };
-        if ops().any(|op| op.state == OpState::WillApply && !op.unverified) {
+        let ops = || self.state_ops();
+        if ops().any(Op::pending) {
             ItemStatus::Pending
-        } else if ops().any(unreadable) {
-            if ops().any(|op| {
-                !op.unverified && matches!(op.state, OpState::AlreadyDone | OpState::Absent)
-            }) {
+        } else if ops().any(Op::unread) {
+            if ops().any(|op| !op.unread() && op.state != OpState::WillApply) {
                 ItemStatus::Unconfirmed
             } else {
                 ItemStatus::Unverified
             }
-        } else if ops().any(|op| op.state == OpState::AlreadyDone) {
-            ItemStatus::Applied
         } else if ops().any(|op| op.state == OpState::NonRemovable) {
             ItemStatus::Blocked
+        } else if ops().any(|op| op.state == OpState::AlreadyDone) {
+            ItemStatus::Applied
         } else {
             ItemStatus::Absent
         }
     }
-}
-
-fn unreadable(op: &Op) -> bool {
-    op.unverified || op.state == OpState::NeedsElevation
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,8 +122,13 @@ pub fn build_diff(catalog: &Catalog, selection: &Selection, plan: &Plan) -> Diff
                 reason: Some(describe_builds(&i.windows)),
             }),
     );
-    // stable: catalog order inside each category
-    items.sort_by_key(|i| i.category);
+    let order: HashMap<&str, usize> = catalog
+        .items
+        .iter()
+        .enumerate()
+        .map(|(n, i)| (i.id.as_str(), n))
+        .collect();
+    items.sort_by_key(|i| (i.category, order.get(i.id.as_str()).copied()));
 
     let mut counts = DiffCounts::default();
     for item in &items {
@@ -169,11 +163,6 @@ fn diff_item(item: &PlannedItem) -> DiffItem {
             format!("{} ({})", op.kind, op.detail)
         }
     };
-    let relevant = || {
-        item.ops
-            .iter()
-            .filter(|op| !matches!(op.kind, OpKind::Kill { .. }))
-    };
     DiffItem {
         id: item.id.clone(),
         name: item.name.clone(),
@@ -181,11 +170,16 @@ fn diff_item(item: &PlannedItem) -> DiffItem {
         level: item.level,
         risk: item.risk,
         status: item.status(),
-        pending: relevant()
-            .filter(|op| op.state == OpState::WillApply && !op.unverified)
+        pending: item
+            .state_ops()
+            .filter(|op| op.pending())
             .map(line)
             .collect(),
-        unverified: relevant().filter(|op| unreadable(op)).map(line).collect(),
+        unverified: item
+            .state_ops()
+            .filter(|op| op.unread())
+            .map(line)
+            .collect(),
         reason: None,
     }
 }
@@ -395,6 +389,82 @@ value = 1
             status(&diff(&sys, Level::Medium), "appx.demo"),
             ItemStatus::Blocked
         );
+    }
+
+    const MIXED_CATALOG: &str = r#"
+[[item]]
+id = "appx.mixed"
+name = "Mixed"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "appx"
+patterns = ["*DemoCore*"]
+[[item.step]]
+kind = "service"
+names = ["DemoSvc"]
+startup = "disabled"
+"#;
+
+    fn mixed_status(sys: &Fake) -> ItemStatus {
+        let catalog = Catalog::parse("t", MIXED_CATALOG).unwrap();
+        let selection = Selection::level(Level::Medium);
+        let plan = build_plan(&catalog, &selection, 26100, true, sys);
+        build_diff(&catalog, &selection, &plan).items[0].status
+    }
+
+    #[test]
+    fn applied_parts_next_to_a_part_windows_keeps_are_blocked_not_applied() {
+        let sys = Fake::default()
+            .with_package("Microsoft.DemoCore", true)
+            .with_service("DemoSvc", Startup::Disabled, false);
+        assert_eq!(mixed_status(&sys), ItemStatus::Blocked);
+    }
+
+    #[test]
+    fn a_readable_blocked_part_with_the_rest_unreadable_is_unconfirmed() {
+        let sys = Fake::default()
+            .with_package("Microsoft.DemoCore", true)
+            .provisioned(Provisioned::NeedsElevation);
+        assert_eq!(
+            status(&diff(&sys, Level::Medium), "appx.demo"),
+            ItemStatus::Unconfirmed
+        );
+    }
+
+    const EARLY_ITEM: &str = r#"
+[[item]]
+id = "privacy.first"
+name = "First"
+category = "privacy"
+level = "medium"
+risk = "low"
+summary = "x"
+windows = { min_build = 26200 }
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Demo"
+name = "First"
+type = "dword"
+value = 1
+"#;
+
+    #[test]
+    fn items_for_another_build_keep_their_catalog_place() {
+        let catalog = Catalog::parse("t", &format!("{EARLY_ITEM}{CATALOG}")).unwrap();
+        let selection = Selection::level(Level::Medium);
+        let plan = build_plan(&catalog, &selection, 26100, true, &Fake::default());
+        let d = build_diff(&catalog, &selection, &plan);
+        let privacy: Vec<&str> = d
+            .items
+            .iter()
+            .filter(|i| i.id.starts_with("privacy."))
+            .map(|i| i.id.as_str())
+            .collect();
+        assert_eq!(privacy, vec!["privacy.first", "privacy.reg", "privacy.new"]);
     }
 
     #[test]

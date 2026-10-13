@@ -1,6 +1,7 @@
 use super::expand_env;
 use crate::catalog::{
     Catalog, Category, Hive, Item, Level, RegType, Risk, Scope, Startup, Step, TaskAction,
+    profile_var,
 };
 use crate::system::{
     AppxPackage, Inspect, ProcessInfo, Provisioned, RegRoot, RegValue, TaskInfo, UserProfile,
@@ -104,6 +105,8 @@ pub enum OpKind {
     Delete {
         path: PathBuf,
     },
+    /// Stands for the accounts a step scoped to every user could not see.
+    OtherProfiles,
 }
 
 impl fmt::Display for OpKind {
@@ -131,6 +134,7 @@ impl fmt::Display for OpKind {
             OpKind::Kill { name } => write!(f, "kill {name}"),
             OpKind::Run { exe, args, .. } => write!(f, "run {} {}", exe.display(), args.join(" ")),
             OpKind::Delete { path } => write!(f, "delete {}", path.display()),
+            OpKind::OtherProfiles => write!(f, "other user profiles"),
         }
     }
 }
@@ -174,6 +178,21 @@ impl Op {
         self.unverified = unverified;
         self
     }
+
+    /// Kills are a precondition of other ops, not a state the item leaves behind.
+    pub fn is_state(&self) -> bool {
+        !matches!(self.kind, OpKind::Kill { .. })
+    }
+
+    /// Applying would change something the plan could read.
+    pub fn pending(&self) -> bool {
+        self.state == OpState::WillApply && !self.unverified
+    }
+
+    /// The current state is not known: a read failed, or only an elevated process sees it.
+    pub fn unread(&self) -> bool {
+        self.unverified || self.state == OpState::NeedsElevation
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,10 +217,12 @@ impl PlannedItem {
             .count()
     }
 
-    pub fn needs_elevation(&self) -> bool {
-        self.ops
-            .iter()
-            .any(|op| op.state == OpState::NeedsElevation)
+    pub fn state_ops(&self) -> impl Iterator<Item = &Op> {
+        self.ops.iter().filter(|op| op.is_state())
+    }
+
+    pub fn has_unread(&self) -> bool {
+        self.state_ops().any(Op::unread)
     }
 }
 
@@ -315,16 +336,19 @@ fn split<T: Default>(result: Result<T, crate::system::SysError>) -> (T, Option<S
     }
 }
 
-/// Lists that are expensive to fetch are read once per plan.
+/// Lists that are expensive to fetch are read once per plan. Each `*_error` says why
+/// its list could not be read; the empty list it leaves then means nothing.
 struct Snapshot {
     packages: Vec<AppxPackage>,
-    /// Why the installed list could not be read; an empty list then means nothing.
     packages_error: Option<String>,
-    tasks_error: Option<String>,
     provisioned: Provisioned,
+    provisioned_error: Option<String>,
     tasks: Vec<TaskInfo>,
+    tasks_error: Option<String>,
     processes: Vec<ProcessInfo>,
+    processes_error: Option<String>,
     profiles: Vec<UserProfile>,
+    profiles_error: Option<String>,
     interactive: Option<UserProfile>,
     default_profile: Option<PathBuf>,
 }
@@ -333,19 +357,39 @@ impl Snapshot {
     fn take(sys: &dyn Inspect) -> Self {
         let (packages, packages_error) = split(sys.installed_packages());
         let (tasks, tasks_error) = split(sys.tasks());
+        let (processes, processes_error) = split(sys.running_processes());
+        let (profiles, profiles_error) = split(sys.user_profiles());
+        let (provisioned, provisioned_error) = match sys.provisioned_packages() {
+            Ok(p) => (p, None),
+            Err(e) => (Provisioned::Known(Vec::new()), Some(e.to_string())),
+        };
         Snapshot {
             packages,
             packages_error,
-            provisioned: sys
-                .provisioned_packages()
-                .unwrap_or(Provisioned::NeedsElevation),
+            provisioned,
+            provisioned_error,
             tasks,
             tasks_error,
-            processes: sys.running_processes().unwrap_or_default(),
-            profiles: sys.user_profiles().unwrap_or_default(),
+            processes,
+            processes_error,
+            profiles,
+            profiles_error,
             interactive: sys.interactive_user(),
             default_profile: sys.default_profile_path(),
         }
+    }
+
+    /// Marks a step scoped to every account when the other accounts could not be listed.
+    fn other_profiles_op(&self, scope: Scope) -> Option<Op> {
+        let e = self
+            .profiles_error
+            .as_ref()
+            .filter(|_| scope == Scope::AllUsers)?;
+        Some(
+            Op::new(OpKind::OtherProfiles, OpState::Absent)
+                .with_detail(format!("could not list user profiles: {e}"))
+                .unverified(true),
+        )
     }
 
     /// Registry roots a per-user step must reach for the given scope.
@@ -421,7 +465,10 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                 let roots = match hive {
                     Hive::Hklm => vec![RegRoot::Machine],
                     Hive::Hkcr => vec![RegRoot::Classes],
-                    Hive::Hkcu => snap.user_roots(*scope),
+                    Hive::Hkcu => {
+                        ops.extend(snap.other_profiles_op(*scope));
+                        snap.user_roots(*scope)
+                    }
                 };
                 for root in roots {
                     plan_registry(
@@ -443,11 +490,17 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                 args,
                 skip_exit_codes,
                 when_present,
-            } => {
-                let present = when_present.is_empty() || any_present(when_present, snap, sys);
-                plan_run(candidates, args, skip_exit_codes, present, sys, &mut ops)
-            }
+            } => plan_run(
+                candidates,
+                args,
+                skip_exit_codes,
+                when_present,
+                snap,
+                sys,
+                &mut ops,
+            ),
             Step::Delete { paths, scope } => {
+                ops.extend(snap.other_profiles_op(*scope));
                 for (who, folder) in snap.user_folders(*scope) {
                     plan_delete(
                         paths,
@@ -522,31 +575,34 @@ fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
                 },
             ));
         }
-        if !matched {
+        // without the installed list a miss means nothing; the line below stands for it
+        if !matched && snap.packages_error.is_none() {
+            ops.push(Op::new(
+                OpKind::PackagePattern {
+                    pattern: pattern.clone(),
+                },
+                OpState::Absent,
+            ));
+        }
+    }
+    // one line per step, not per pattern
+    for (list, error) in [
+        ("installed packages", &snap.packages_error),
+        ("provisioned packages", &snap.provisioned_error),
+    ] {
+        if let Some(e) = error {
             ops.push(
                 Op::new(
                     OpKind::PackagePattern {
-                        pattern: pattern.clone(),
+                        pattern: list.into(),
                     },
                     OpState::Absent,
                 )
-                .unverified(snap.packages_error.is_some()),
+                .with_detail(format!("could not list: {e}"))
+                .unverified(true),
             );
         }
     }
-    if let Some(e) = &snap.packages_error {
-        ops.push(
-            Op::new(
-                OpKind::PackagePattern {
-                    pattern: "installed packages".into(),
-                },
-                OpState::Absent,
-            )
-            .with_detail(format!("could not list: {e}"))
-            .unverified(true),
-        );
-    }
-    // one line per step, not per pattern
     if matches!(snap.provisioned, Provisioned::NeedsElevation) {
         ops.push(
             Op::new(
@@ -715,9 +771,19 @@ fn same_process(a: &str, b: &str) -> bool {
 
 fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     for name in processes {
+        let kind = OpKind::Kill { name: name.clone() };
+        // without the process list, let apply try; killing what is not running is a no-op
+        if let Some(e) = &snap.processes_error {
+            ops.push(
+                Op::new(kind, OpState::WillApply)
+                    .with_detail(format!("could not list processes: {e}"))
+                    .unverified(true),
+            );
+            continue;
+        }
         let running = snap.processes.iter().any(|p| same_process(&p.name, name));
         ops.push(Op::new(
-            OpKind::Kill { name: name.clone() },
+            kind,
             if running {
                 OpState::WillApply
             } else {
@@ -727,59 +793,81 @@ fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     }
 }
 
-/// Profile-relative paths are checked in every profile folder, so a copy installed
-/// for another account still counts. A path that cannot be inspected counts as present.
-fn any_present(paths: &[String], snap: &Snapshot, sys: &dyn Inspect) -> bool {
-    let folders = snap.user_folders(Scope::AllUsers);
-    paths.iter().any(|raw| {
-        let upper = raw.to_ascii_uppercase();
-        let per_profile = ["%USERPROFILE%", "%LOCALAPPDATA%", "%APPDATA%"]
-            .iter()
-            .any(|v| upper.starts_with(v));
-        let candidates: Vec<PathBuf> = if per_profile {
-            folders
-                .iter()
-                .map(|(_, folder)| expand_for_profile(raw, folder.as_deref()))
-                .collect()
-        } else {
-            vec![PathBuf::from(expand_env(raw))]
-        };
-        candidates
-            .iter()
-            .any(|path| !matches!(sys.path_info(path), Ok(None)))
-    })
+enum Presence {
+    Present,
+    Missing,
+    Unknown(String),
 }
 
+/// Profile-relative paths are checked in every profile folder, so a copy installed
+/// for another account still counts. One path found is enough; otherwise any path that
+/// could not be checked, or profiles that could not be listed, leave it unknown.
+fn presence(paths: &[String], snap: &Snapshot, sys: &dyn Inspect) -> Presence {
+    let folders = snap.user_folders(Scope::AllUsers);
+    let mut seen = HashSet::new();
+    let mut unknown = None;
+    for raw in paths {
+        for (_, folder) in &folders {
+            let path = expand_for_profile(raw, folder.as_deref());
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            match sys.exists(&path) {
+                Ok(true) => return Presence::Present,
+                Ok(false) => {}
+                Err(e) => {
+                    unknown
+                        .get_or_insert_with(|| format!("could not check {}: {e}", path.display()));
+                }
+            }
+        }
+    }
+    if let Some(why) = unknown {
+        return Presence::Unknown(why);
+    }
+    match &snap.profiles_error {
+        Some(e) if paths.iter().any(|p| profile_var(p).is_some()) => {
+            Presence::Unknown(format!("could not list user profiles: {e}"))
+        }
+        _ => Presence::Missing,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn plan_run(
     candidates: &[String],
     args: &[String],
     skip_exit_codes: &[i32],
-    present: bool,
+    when_present: &[String],
+    snap: &Snapshot,
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
 ) {
     for candidate in candidates {
         let exe = PathBuf::from(expand_env(candidate));
-        if matches!(sys.path_info(&exe), Ok(Some(_))) {
-            let op = Op::new(
-                OpKind::Run {
-                    exe,
-                    args: args.to_vec(),
-                    skip_exit_codes: skip_exit_codes.to_vec(),
-                },
-                if present {
-                    OpState::WillApply
-                } else {
-                    OpState::AlreadyDone
-                },
-            );
-            ops.push(if present {
-                op
-            } else {
-                op.with_detail("nothing it removes is present")
-            });
-            return;
+        if !matches!(sys.exists(&exe), Ok(true)) {
+            continue;
         }
+        let kind = OpKind::Run {
+            exe,
+            args: args.to_vec(),
+            skip_exit_codes: skip_exit_codes.to_vec(),
+        };
+        let presence = if when_present.is_empty() {
+            Presence::Present
+        } else {
+            presence(when_present, snap, sys)
+        };
+        ops.push(match presence {
+            Presence::Present => Op::new(kind, OpState::WillApply),
+            Presence::Missing => {
+                Op::new(kind, OpState::AlreadyDone).with_detail("nothing it removes is present")
+            }
+            Presence::Unknown(why) => Op::new(kind, OpState::WillApply)
+                .with_detail(why)
+                .unverified(true),
+        });
+        return;
     }
     ops.push(
         Op::new(
@@ -800,16 +888,9 @@ pub fn expand_for_profile(raw: &str, folder: Option<&std::path::Path>) -> PathBu
     let Some(folder) = folder else {
         return PathBuf::from(expand_env(raw));
     };
-    let base = folder.to_string_lossy();
-    let upper = raw.to_ascii_uppercase();
-    let replaced = if let Some(rest) = upper.strip_prefix("%USERPROFILE%") {
-        format!("{base}{}", &raw[raw.len() - rest.len()..])
-    } else if let Some(rest) = upper.strip_prefix("%LOCALAPPDATA%") {
-        format!("{base}\\AppData\\Local{}", &raw[raw.len() - rest.len()..])
-    } else if let Some(rest) = upper.strip_prefix("%APPDATA%") {
-        format!("{base}\\AppData\\Roaming{}", &raw[raw.len() - rest.len()..])
-    } else {
-        raw.to_string()
+    let replaced = match profile_var(raw) {
+        Some((var, sub)) => format!("{}{sub}{}", folder.to_string_lossy(), &raw[var.len()..]),
+        None => raw.to_string(),
     };
     PathBuf::from(expand_env(&replaced))
 }
@@ -1058,7 +1139,7 @@ value = 1
             false,
             &sys,
         );
-        assert!(plan.items[0].needs_elevation());
+        assert!(plan.items[0].has_unread());
     }
 
     #[test]
@@ -1335,6 +1416,182 @@ when_present = ["%LOCALAPPDATA%\\Demo\\Demo.exe", "C:\\Program Files\\Demo\\Demo
             &sys,
         );
         assert_eq!(plan.items[0].ops[0].state, OpState::WillApply);
+    }
+
+    fn run_op(sys: &Fake) -> Op {
+        let catalog = Catalog::parse("t", RUN_CATALOG).unwrap();
+        let plan = build_plan(&catalog, &Selection::level(Level::Medium), 22631, true, sys);
+        plan.items[0].ops[0].clone()
+    }
+
+    #[test]
+    fn run_step_presence_that_cannot_be_checked_is_unverified() {
+        let base = || {
+            Fake::default()
+                .with_path("C:\\Setup.exe", 1, 1)
+                .failing_path("C:\\Program Files\\Demo\\Demo.exe")
+        };
+        let op = run_op(&base());
+        assert_eq!(op.state, OpState::WillApply);
+        assert!(op.unverified, "{op:?}");
+        assert!(op.detail.starts_with("could not check"), "{}", op.detail);
+
+        // one copy found is enough, whatever else could not be checked
+        let found = run_op(&base().with_path(&expand_env("%LOCALAPPDATA%\\Demo\\Demo.exe"), 1, 1));
+        assert_eq!(found.state, OpState::WillApply);
+        assert!(!found.unverified);
+    }
+
+    #[test]
+    fn run_step_presence_is_unverified_when_profiles_cannot_be_listed() {
+        let sys = Fake::default()
+            .with_path("C:\\Setup.exe", 1, 1)
+            .failing_profiles();
+        let op = run_op(&sys);
+        assert_eq!(op.state, OpState::WillApply);
+        assert!(op.unverified);
+        assert!(op.detail.contains("user profiles"), "{}", op.detail);
+    }
+
+    #[test]
+    fn run_step_presence_ignores_profiles_when_it_lists_no_profile_path() {
+        let catalog = Catalog::parse(
+            "t",
+            &RUN_CATALOG.replace("\"%LOCALAPPDATA%\\\\Demo\\\\Demo.exe\", ", ""),
+        )
+        .unwrap();
+        let sys = Fake::default()
+            .with_path("C:\\Setup.exe", 1, 1)
+            .failing_profiles();
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        assert_eq!(plan.items[0].ops[0].state, OpState::AlreadyDone);
+    }
+
+    const PATTERNS_CATALOG: &str = r#"
+[[item]]
+id = "appx.many"
+name = "Many"
+category = "appx"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "appx"
+patterns = ["*One*", "*Two*", "*Three*"]
+"#;
+
+    fn appx_ops(sys: &Fake) -> Vec<Op> {
+        let catalog = Catalog::parse("t", PATTERNS_CATALOG).unwrap();
+        let plan = build_plan(&catalog, &Selection::level(Level::Medium), 22631, true, sys);
+        plan.items[0].ops.clone()
+    }
+
+    #[test]
+    fn unreadable_package_list_is_one_unread_line_per_step() {
+        let ops = appx_ops(&Fake::default().failing_packages());
+        assert_eq!(ops.len(), 1, "{ops:?}");
+        assert!(ops[0].unverified);
+        assert_eq!(ops[0].kind.to_string(), "package installed packages");
+    }
+
+    #[test]
+    fn unreadable_provisioned_list_is_unread_not_an_elevation_matter() {
+        let ops = appx_ops(&Fake::default().failing_provisioned());
+        let line = ops
+            .iter()
+            .find(|o| o.kind.to_string() == "package provisioned packages")
+            .unwrap();
+        assert!(line.unverified);
+        assert!(line.detail.starts_with("could not list"), "{}", line.detail);
+        assert!(ops.iter().all(|o| o.state != OpState::NeedsElevation));
+    }
+
+    #[test]
+    fn unreadable_task_list_leaves_task_patterns_unverified() {
+        let catalog = Catalog::parse("t", TASK_CATALOG).unwrap();
+        let sys = Fake::default().failing_tasks().with_process("DemoApp.exe");
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        let tasks: Vec<&Op> = plan.items[0]
+            .ops
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::TaskPattern { .. }))
+            .collect();
+        assert_eq!(tasks.len(), 2);
+        assert!(
+            tasks
+                .iter()
+                .all(|o| o.unverified && o.state == OpState::Absent)
+        );
+    }
+
+    #[test]
+    fn kills_are_attempted_when_processes_cannot_be_listed() {
+        let catalog = Catalog::parse("t", TASK_CATALOG).unwrap();
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &Fake::default().failing_processes(),
+        );
+        let kills: Vec<&Op> = plan.items[0]
+            .ops
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::Kill { .. }))
+            .collect();
+        assert_eq!(kills.len(), 2);
+        assert!(
+            kills
+                .iter()
+                .all(|o| o.unverified && o.state == OpState::WillApply)
+        );
+    }
+
+    #[test]
+    fn all_users_steps_say_when_other_profiles_could_not_be_listed() {
+        let catalog = Catalog::parse("t", SCOPE_CATALOG).unwrap();
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &Fake::default().failing_profiles(),
+        );
+        let markers = plan.items[0]
+            .ops
+            .iter()
+            .filter(|o| o.kind == OpKind::OtherProfiles)
+            .count();
+        assert_eq!(markers, 2, "one per all-users step");
+        assert!(plan.items[0].has_unread());
+
+        let user_scope =
+            Catalog::parse("t", SCOPE_CATALOG.replace("all-users", "user").as_str()).unwrap();
+        let plan = build_plan(
+            &user_scope,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &Fake::default().failing_profiles(),
+        );
+        assert!(
+            plan.items[0]
+                .ops
+                .iter()
+                .all(|o| o.kind != OpKind::OtherProfiles)
+        );
     }
 
     const SCOPE_CATALOG: &str = r#"

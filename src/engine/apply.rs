@@ -57,7 +57,7 @@ fn run_op(kind: &OpKind, sys: &mut dyn Apply) -> Outcome {
             skip_exit_codes,
         } => sys.run(exe, args, skip_exit_codes),
         OpKind::Delete { path } => sys.delete_path(path),
-        OpKind::PackagePattern { .. } | OpKind::TaskPattern { .. } => {
+        OpKind::PackagePattern { .. } | OpKind::TaskPattern { .. } | OpKind::OtherProfiles => {
             Outcome::Skipped("nothing to apply".into())
         }
     }

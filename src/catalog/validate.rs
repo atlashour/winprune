@@ -148,9 +148,7 @@ fn check_step(step: &Step) -> Vec<String> {
 }
 
 fn is_profile_path(upper: &str) -> bool {
-    upper.starts_with("%LOCALAPPDATA%\\")
-        || upper.starts_with("%APPDATA%\\")
-        || upper.starts_with("%USERPROFILE%\\")
+    super::profile_var(upper).is_some_and(|(var, _)| upper[var.len()..].starts_with('\\'))
 }
 
 fn deletes_user_data(step: &Step) -> bool {

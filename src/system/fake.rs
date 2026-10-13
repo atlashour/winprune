@@ -22,6 +22,15 @@ pub struct Fake {
     interactive: Option<String>,
     unreadable: Vec<String>,
     packages_fail: bool,
+    provisioned_fail: bool,
+    tasks_fail: bool,
+    processes_fail: bool,
+    profiles_fail: bool,
+    failing_paths: Vec<PathBuf>,
+}
+
+fn unavailable(what: &str) -> SysError {
+    SysError::Other(format!("{what} unavailable"))
 }
 
 impl Fake {
@@ -108,13 +117,39 @@ impl Fake {
         self
     }
 
-    /// Every read under `root` fails, the way the Default profile hive does without
-    /// elevation.
     pub fn failing_packages(mut self) -> Self {
         self.packages_fail = true;
         self
     }
 
+    pub fn failing_provisioned(mut self) -> Self {
+        self.provisioned_fail = true;
+        self
+    }
+
+    pub fn failing_tasks(mut self) -> Self {
+        self.tasks_fail = true;
+        self
+    }
+
+    pub fn failing_processes(mut self) -> Self {
+        self.processes_fail = true;
+        self
+    }
+
+    pub fn failing_profiles(mut self) -> Self {
+        self.profiles_fail = true;
+        self
+    }
+
+    /// Checking `path` fails, as it does for a folder the account cannot traverse.
+    pub fn failing_path(mut self, path: &str) -> Self {
+        self.failing_paths.push(PathBuf::from(path));
+        self
+    }
+
+    /// Every read under `root` fails, the way the Default profile hive does without
+    /// elevation.
     pub fn unreadable(mut self, root: &RegRoot) -> Self {
         self.unreadable.push(root.to_string());
         self
@@ -132,12 +167,15 @@ fn key(root: &RegRoot, path: &str, name: &str) -> (String, String, String) {
 impl Inspect for Fake {
     fn installed_packages(&self) -> Result<Vec<AppxPackage>, SysError> {
         if self.packages_fail {
-            return Err(SysError::Other("package manager unavailable".into()));
+            return Err(unavailable("package manager"));
         }
         Ok(self.packages.clone())
     }
 
     fn provisioned_packages(&self) -> Result<Provisioned, SysError> {
+        if self.provisioned_fail {
+            return Err(unavailable("provisioning store"));
+        }
         Ok(self
             .provisioned
             .clone()
@@ -161,22 +199,45 @@ impl Inspect for Fake {
     }
 
     fn tasks(&self) -> Result<Vec<TaskInfo>, SysError> {
+        if self.tasks_fail {
+            return Err(unavailable("task scheduler"));
+        }
         Ok(self.tasks.clone())
     }
 
     fn running_processes(&self) -> Result<Vec<ProcessInfo>, SysError> {
+        if self.processes_fail {
+            return Err(unavailable("process list"));
+        }
         Ok(self.processes.clone())
     }
 
     fn path_info(&self, path: &Path) -> Result<Option<PathInfo>, SysError> {
+        if self.failing_paths.iter().any(|p| p == path) {
+            return Err(SysError::AccessDenied);
+        }
         Ok(self.paths.get(path).copied())
     }
 
+    fn exists(&self, path: &Path) -> Result<bool, SysError> {
+        if self.failing_paths.iter().any(|p| p == path) {
+            return Err(SysError::AccessDenied);
+        }
+        Ok(self.paths.contains_key(path))
+    }
+
     fn user_profiles(&self) -> Result<Vec<UserProfile>, SysError> {
+        if self.profiles_fail {
+            return Err(unavailable("profile list"));
+        }
         Ok(self.profiles.clone())
     }
 
     fn interactive_user(&self) -> Option<UserProfile> {
+        // the real lookup goes through the same profile list
+        if self.profiles_fail {
+            return None;
+        }
         let sid = self.interactive.as_ref()?;
         self.profiles.iter().find(|p| &p.sid == sid).cloned()
     }
