@@ -21,6 +21,7 @@ pub struct Fake {
     profiles: Vec<UserProfile>,
     interactive: Option<String>,
     unreadable: Vec<String>,
+    packages_fail: bool,
 }
 
 impl Fake {
@@ -109,6 +110,11 @@ impl Fake {
 
     /// Every read under `root` fails, the way the Default profile hive does without
     /// elevation.
+    pub fn failing_packages(mut self) -> Self {
+        self.packages_fail = true;
+        self
+    }
+
     pub fn unreadable(mut self, root: &RegRoot) -> Self {
         self.unreadable.push(root.to_string());
         self
@@ -125,6 +131,9 @@ fn key(root: &RegRoot, path: &str, name: &str) -> (String, String, String) {
 
 impl Inspect for Fake {
     fn installed_packages(&self) -> Result<Vec<AppxPackage>, SysError> {
+        if self.packages_fail {
+            return Err(SysError::Other("package manager unavailable".into()));
+        }
         Ok(self.packages.clone())
     }
 

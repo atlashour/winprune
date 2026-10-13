@@ -29,7 +29,7 @@ impl Selection {
         }
     }
 
-    fn wants(&self, id: &str, level: Level) -> bool {
+    pub(crate) fn wants(&self, id: &str, level: Level) -> bool {
         if self.skip.contains(id) {
             return false;
         }
@@ -308,9 +308,19 @@ pub fn build_plan(
     }
 }
 
+fn split<T: Default>(result: Result<T, crate::system::SysError>) -> (T, Option<String>) {
+    match result {
+        Ok(v) => (v, None),
+        Err(e) => (T::default(), Some(e.to_string())),
+    }
+}
+
 /// Lists that are expensive to fetch are read once per plan.
 struct Snapshot {
     packages: Vec<AppxPackage>,
+    /// Why the installed list could not be read; an empty list then means nothing.
+    packages_error: Option<String>,
+    tasks_error: Option<String>,
     provisioned: Provisioned,
     tasks: Vec<TaskInfo>,
     processes: Vec<ProcessInfo>,
@@ -321,12 +331,16 @@ struct Snapshot {
 
 impl Snapshot {
     fn take(sys: &dyn Inspect) -> Self {
+        let (packages, packages_error) = split(sys.installed_packages());
+        let (tasks, tasks_error) = split(sys.tasks());
         Snapshot {
-            packages: sys.installed_packages().unwrap_or_default(),
+            packages,
+            packages_error,
             provisioned: sys
                 .provisioned_packages()
                 .unwrap_or(Provisioned::NeedsElevation),
-            tasks: sys.tasks().unwrap_or_default(),
+            tasks,
+            tasks_error,
             processes: sys.running_processes().unwrap_or_default(),
             profiles: sys.user_profiles().unwrap_or_default(),
             interactive: sys.interactive_user(),
@@ -509,13 +523,28 @@ fn plan_appx(patterns: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
             ));
         }
         if !matched {
-            ops.push(Op::new(
+            ops.push(
+                Op::new(
+                    OpKind::PackagePattern {
+                        pattern: pattern.clone(),
+                    },
+                    OpState::Absent,
+                )
+                .unverified(snap.packages_error.is_some()),
+            );
+        }
+    }
+    if let Some(e) = &snap.packages_error {
+        ops.push(
+            Op::new(
                 OpKind::PackagePattern {
-                    pattern: pattern.clone(),
+                    pattern: "installed packages".into(),
                 },
                 OpState::Absent,
-            ));
-        }
+            )
+            .with_detail(format!("could not list: {e}"))
+            .unverified(true),
+        );
     }
     // one line per step, not per pattern
     if matches!(snap.provisioned, Provisioned::NeedsElevation) {
@@ -641,12 +670,18 @@ fn plan_tasks(patterns: &[String], action: TaskAction, snap: &Snapshot, ops: &mu
             .filter(|t| glob(pattern, &t.path))
             .collect();
         if matches.is_empty() {
-            ops.push(Op::new(
+            let op = Op::new(
                 OpKind::TaskPattern {
                     pattern: pattern.clone(),
                 },
                 OpState::Absent,
-            ));
+            );
+            ops.push(match &snap.tasks_error {
+                Some(e) => op
+                    .with_detail(format!("could not list tasks: {e}"))
+                    .unverified(true),
+                None => op,
+            });
             continue;
         }
         for task in matches {
