@@ -213,6 +213,11 @@ pub enum Step {
         /// Exit codes that mean "nothing to do" rather than failure.
         #[serde(default)]
         skip_exit_codes: Vec<i32>,
+        /// What the command removes. When none of these exists in any profile or on
+        /// the machine, the run is already done; an uninstaller that stays on disk
+        /// after uninstalling cannot tell us that on its own.
+        #[serde(default)]
+        when_present: Vec<String>,
     },
     Delete {
         paths: Vec<String>,

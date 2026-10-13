@@ -428,7 +428,11 @@ fn plan_item(item: &Item, selected: bool, snap: &Snapshot, sys: &dyn Inspect) ->
                 candidates,
                 args,
                 skip_exit_codes,
-            } => plan_run(candidates, args, skip_exit_codes, sys, &mut ops),
+                when_present,
+            } => {
+                let present = when_present.is_empty() || any_present(when_present, snap, sys);
+                plan_run(candidates, args, skip_exit_codes, present, sys, &mut ops)
+            }
             Step::Delete { paths, scope } => {
                 for (who, folder) in snap.user_folders(*scope) {
                     plan_delete(
@@ -688,24 +692,57 @@ fn plan_kill(processes: &[String], snap: &Snapshot, ops: &mut Vec<Op>) {
     }
 }
 
+/// Profile-relative paths are checked in every profile folder, so a copy installed
+/// for another account still counts. A path that cannot be inspected counts as present.
+fn any_present(paths: &[String], snap: &Snapshot, sys: &dyn Inspect) -> bool {
+    let folders = snap.user_folders(Scope::AllUsers);
+    paths.iter().any(|raw| {
+        let upper = raw.to_ascii_uppercase();
+        let per_profile = ["%USERPROFILE%", "%LOCALAPPDATA%", "%APPDATA%"]
+            .iter()
+            .any(|v| upper.starts_with(v));
+        let candidates: Vec<PathBuf> = if per_profile {
+            folders
+                .iter()
+                .map(|(_, folder)| expand_for_profile(raw, folder.as_deref()))
+                .collect()
+        } else {
+            vec![PathBuf::from(expand_env(raw))]
+        };
+        candidates
+            .iter()
+            .any(|path| !matches!(sys.path_info(path), Ok(None)))
+    })
+}
+
 fn plan_run(
     candidates: &[String],
     args: &[String],
     skip_exit_codes: &[i32],
+    present: bool,
     sys: &dyn Inspect,
     ops: &mut Vec<Op>,
 ) {
     for candidate in candidates {
         let exe = PathBuf::from(expand_env(candidate));
         if matches!(sys.path_info(&exe), Ok(Some(_))) {
-            ops.push(Op::new(
+            let op = Op::new(
                 OpKind::Run {
                     exe,
                     args: args.to_vec(),
                     skip_exit_codes: skip_exit_codes.to_vec(),
                 },
-                OpState::WillApply,
-            ));
+                if present {
+                    OpState::WillApply
+                } else {
+                    OpState::AlreadyDone
+                },
+            );
+            ops.push(if present {
+                op
+            } else {
+                op.with_detail("nothing it removes is present")
+            });
             return;
         }
     }
@@ -1210,6 +1247,59 @@ paths = ["C:\\OneDriveTemp"]
             .map(|o| o.kind.to_string())
             .collect();
         assert_eq!(ops, vec!["kill Resident", "delete C:\\OneDriveTemp"]);
+    }
+
+    const RUN_CATALOG: &str = r#"
+[[item]]
+id = "onedrive.setup"
+name = "Setup"
+category = "onedrive"
+level = "medium"
+risk = "low"
+summary = "x"
+[[item.step]]
+kind = "run"
+candidates = ["C:\\Setup.exe"]
+args = ["/uninstall"]
+when_present = ["%LOCALAPPDATA%\\Demo\\Demo.exe", "C:\\Program Files\\Demo\\Demo.exe"]
+"#;
+
+    fn run_state(sys: &Fake) -> OpState {
+        let catalog = Catalog::parse("t", RUN_CATALOG).unwrap();
+        let plan = build_plan(&catalog, &Selection::level(Level::Medium), 22631, true, sys);
+        plan.items[0].ops[0].state
+    }
+
+    #[test]
+    fn run_step_is_done_when_nothing_it_removes_is_present() {
+        let base = || {
+            Fake::default()
+                .with_profile("S-1-5-21-1", "alice", "C:\\Users\\alice", true)
+                .with_profile("S-1-5-21-2", "bob", "C:\\Users\\bob", false)
+                .interactive("S-1-5-21-1")
+                .with_path("C:\\Setup.exe", 1, 1)
+        };
+        assert_eq!(run_state(&base()), OpState::AlreadyDone);
+        let other_profile =
+            base().with_path("C:\\Users\\bob\\AppData\\Local\\Demo\\Demo.exe", 1, 1);
+        assert_eq!(run_state(&other_profile), OpState::WillApply);
+        let machine = base().with_path("C:\\Program Files\\Demo\\Demo.exe", 1, 1);
+        assert_eq!(run_state(&machine), OpState::WillApply);
+    }
+
+    #[test]
+    fn run_step_without_probe_always_runs() {
+        let catalog =
+            Catalog::parse("t", &RUN_CATALOG.replace("when_present", "# when_present")).unwrap();
+        let sys = Fake::default().with_path("C:\\Setup.exe", 1, 1);
+        let plan = build_plan(
+            &catalog,
+            &Selection::level(Level::Medium),
+            22631,
+            true,
+            &sys,
+        );
+        assert_eq!(plan.items[0].ops[0].state, OpState::WillApply);
     }
 
     const SCOPE_CATALOG: &str = r#"
