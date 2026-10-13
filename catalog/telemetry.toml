@@ -452,3 +452,35 @@ path = "Software\\Microsoft\\Speech_OneCore\\Settings\\OnlineSpeechPrivacy"
 name = "HasAccepted"
 type = "dword"
 value = 0
+
+# Task description on 26300: "Telemetry events for sustainability" (COM handler
+# {6EE41D75-D091-4FB7-9AD5-018760DD25D4}). PowerGridForecastTask in the same folder only
+# says it has a COM task handler; nothing shows it is telemetry, so it stays.
+[[item]]
+id = "telemetry.sustainability"
+name = "Sustainability telemetry task"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Disables the scheduled task that sends sustainability telemetry events. The other task in that folder is left alone."
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = ["\\Microsoft\\Windows\\Sustainability\\SustainabilityTelemetry"]
+
+# Task description on 26300: "Performance feedback (Microsoft internal)" (COM handler
+# {6A719579-5695-469F-832A-C96B471842F6}). WhesvcToast in the same folder shows the notice
+# after a trace captured with the hotkey, which a person asked for; it stays.
+[[item]]
+id = "telemetry.performance-feedback"
+name = "Performance feedback toast"
+category = "telemetry"
+level = "medium"
+risk = "low"
+summary = "Disables the scheduled task that asks for feedback about performance traces."
+
+[[item.step]]
+kind = "task"
+action = "disable"
+patterns = ["\\Microsoft\\Windows\\PerformanceTrace\\ShowFeedbackToast"]
