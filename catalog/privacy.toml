@@ -7,7 +7,7 @@ name = "Sponsored apps and tips policy"
 category = "privacy"
 level = "medium"
 risk = "low"
-summary = "Sets the CloudContent policies against promoted app installs, tips and account-state content. Enterprise and Education honour them; on Pro and Home the per-user suggestion switches below do the work."
+summary = "Sets the CloudContent policies against promoted app installs, tips, account-state content, the Microsoft 365 Copilot recommendations at sign-in and the Get Started app. Enterprise and Education honour them; on Pro and Home the per-user suggestion switches below do the work."
 
 [[item.step]]
 kind = "registry"
@@ -38,6 +38,24 @@ kind = "registry"
 hive = "hklm"
 path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
 name = "DisableCloudOptimizedContent"
+type = "dword"
+value = 1
+
+# CloudContent.admx (26300): Microsoft 365 Copilot recommendations at sign-in, and the
+# Get Started experience. Experience Policy CSP lists both for Enterprise and Education.
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableCopilotPinScreen"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableGetStarted"
 type = "dword"
 value = 1
 
@@ -286,6 +304,35 @@ name = "HideRecommendedPersonalizedSites"
 type = "dword"
 value = 1
 
+# AccountNotifications.admx, user policy, honoured on Pro (Notifications Policy CSP).
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\AccountNotifications"
+name = "DisableAccountNotifications"
+type = "dword"
+value = 1
+
+# The Settings switches behind the policy above and the "suggested" toasts.
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\SystemSettings\\AccountNotifications"
+name = "EnableAccountNotifications"
+type = "dword"
+value = 0
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\Windows.SystemToast.Suggested"
+name = "Enabled"
+type = "dword"
+value = 0
+
 [[item]]
 id = "privacy.tailored-experiences"
 name = "Tailored experiences"
@@ -327,7 +374,7 @@ name = "Windows Spotlight"
 category = "privacy"
 level = "high"
 risk = "low"
-summary = "Turns off Windows Spotlight on the lock screen, its tips and its welcome experience by user policy. Enterprise and Education only; Pro and Home ignore it."
+summary = "Turns off Windows Spotlight on the lock screen, its tips, its welcome experience and the Spotlight desktop background by user policy. Enterprise and Education only; Pro and Home ignore it."
 warning = "The lock screen falls back to a static picture. On Pro and Home nothing changes."
 
 [[item.step]]
@@ -336,6 +383,34 @@ hive = "hkcu"
 scope = "all-users"
 path = "Software\\Policies\\Microsoft\\Windows\\CloudContent"
 name = "DisableWindowsSpotlightFeatures"
+type = "dword"
+value = 1
+
+[[item.step]]
+kind = "registry"
+hive = "hkcu"
+scope = "all-users"
+path = "Software\\Policies\\Microsoft\\Windows\\CloudContent"
+name = "DisableSpotlightCollectionOnDesktop"
+type = "dword"
+value = 1
+
+# Explorer.admx (26300), Windows 11 22H2 and later.
+[[item]]
+id = "privacy.explorer-cloud-files"
+name = "Cloud file suggestions in File Explorer"
+category = "privacy"
+level = "high"
+risk = "low"
+summary = "Stops File Explorer from requesting cloud file metadata for Home, Recent, Recommended, Favorites and Shared."
+warning = "Microsoft 365 and OneDrive files only show in File Explorer Home once they are on this machine."
+windows = { min_build = 22621 }
+
+[[item.step]]
+kind = "registry"
+hive = "hklm"
+path = "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer"
+name = "DisableGraphRecentItems"
 type = "dword"
 value = 1
 
