@@ -118,7 +118,8 @@ patterns = ["*OldVendor*"]
 ```
 
 Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`,
-`unsupported`. Registry and delete steps under a user profile take `scope = "user" |
+`unsupported`. An item other items list in `requires` cannot be disabled on its own:
+the overlay fails to load until those are disabled too. Registry and delete steps under a user profile take `scope = "user" |
 "all-users" | "default-profile"`; the Default profile is left out for keys under
 `Software\Classes`, whose hive winprune does not mount. A `run` step can list in
 `when_registered` the registry values the software it removes keeps while installed,
