@@ -60,11 +60,11 @@ the selected items that are pending.
 Exit codes: 0 done, 1 bad arguments or setup error, 2 some operations failed, 3
 elevation needed, 4 aborted at a prompt, 5 `diff --exit-code` found pending items.
 
-Each apply writes a JSON report and a log under `%ProgramData%\winprune`
-(or `%LocalAppData%\winprune` when not elevated).
+Each apply writes a JSON report and a log under `%LocalAppData%\winprune` of the
+account that runs it.
 
 Plan and dry-run never need administrator rights. Applying does: winprune writes the
-run into a folder under `%ProgramData%\winprune\runs`, asks through UAC, continues in
+run into a folder under `%LocalAppData%\winprune\runs`, asks through UAC, continues in
 a new window, and prints the outcome back in the window you started from.
 
 Double-clicking `winprune.exe` asks through UAC first and opens the terminal UI

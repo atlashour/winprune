@@ -3,20 +3,18 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// Append-only log plus one JSON report per run. Elevated runs write under
-/// ProgramData; anything else stays in the user's local AppData. If the preferred
-/// folder cannot be written the next candidate is used, so a run always leaves a trace.
+/// Append-only log plus one JSON report per run, in the local AppData of the account
+/// that runs winprune. Not ProgramData: any user can create folders there, so an
+/// elevated run would write into whatever another user had planted. If the folder
+/// cannot be written the temp folder is used, so a run always leaves a trace.
 pub struct Log {
     dir: PathBuf,
     file: Option<File>,
 }
 
 impl Log {
-    pub fn open(elevated: bool) -> Log {
+    pub fn open() -> Log {
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if elevated && let Some(p) = std::env::var_os("ProgramData") {
-            candidates.push(PathBuf::from(p));
-        }
         if let Some(p) = std::env::var_os("LOCALAPPDATA") {
             candidates.push(PathBuf::from(p));
         }

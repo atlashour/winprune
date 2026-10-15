@@ -198,13 +198,13 @@ mod tests {
     fn quotes_only_what_needs_it() {
         let args = vec![
             "--run-dir".to_string(),
-            "C:\\ProgramData\\winprune\\runs\\x".to_string(),
+            "C:\\Users\\me\\AppData\\Local\\winprune\\runs\\x".to_string(),
             "C:\\a dir\\".to_string(),
             "say \"hi\"".to_string(),
         ];
         assert_eq!(
             quote_args(&args),
-            "--run-dir C:\\ProgramData\\winprune\\runs\\x \"C:\\a dir\\\\\" \"say \\\"hi\\\"\""
+            "--run-dir C:\\Users\\me\\AppData\\Local\\winprune\\runs\\x \"C:\\a dir\\\\\" \"say \\\"hi\\\"\""
         );
     }
 }

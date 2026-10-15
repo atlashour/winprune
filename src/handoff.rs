@@ -1,6 +1,7 @@
-// Elevated runs get their configuration from a folder under ProgramData: both the
-// interactive user and whichever admin answers the UAC prompt can read it, and it
-// avoids quoting the whole selection on the command line.
+// Elevated runs get their configuration from a folder in the launching user's local
+// AppData: other users cannot plant a request there, Administrators can read it
+// whoever answers the UAC prompt, and it avoids quoting the whole selection on the
+// command line.
 
 use crate::catalog::Level;
 use crate::engine::{Report, file_stamp};
@@ -37,9 +38,9 @@ pub const REQUEST_FILE: &str = "request.json";
 pub const REPORT_FILE: &str = "report.json";
 
 pub fn new_run_dir() -> Result<PathBuf, String> {
-    let base = std::env::var_os("ProgramData")
+    let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
-        .ok_or("ProgramData is not set")?;
+        .ok_or("LOCALAPPDATA is not set")?;
     let dir =
         base.join("winprune")
             .join("runs")

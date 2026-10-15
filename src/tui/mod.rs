@@ -33,7 +33,7 @@ pub fn run(
         );
         return EXIT_USAGE;
     }
-    let mut trace = Log::open(ctx.info.elevated);
+    let mut trace = Log::open();
     trace.line(&format!(
         "tui start level {} build {} elevated {}",
         filter.level, ctx.info.build, ctx.info.elevated
@@ -134,7 +134,7 @@ fn event_loop(
                 let (tx, rx) = mpsc::channel();
                 let plan = app.plan.clone();
                 let dry_run = app.dry_run;
-                let mut l = Log::open(app.info.elevated);
+                let mut l = Log::open();
                 l.line(&format!(
                     "apply level {} dry_run {} build {} (tui)",
                     plan.level, dry_run, plan.build

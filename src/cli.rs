@@ -246,7 +246,7 @@ pub fn run(cli: Cli) -> i32 {
             if os::owns_console() && interactive && !ctx.info.elevated {
                 let mut request = cli.filter.request(false, true);
                 request.interactive_sid = crate::system::windows::profiles::current_sid();
-                let mut log = Log::open(ctx.info.elevated);
+                let mut log = Log::open();
                 match handoff::start_elevated(&request) {
                     Ok(dir) => {
                         log.line(&format!(
@@ -278,7 +278,7 @@ pub fn run(cli: Cli) -> i32 {
             } else {
                 print!("{}", render_plan(&plan, all));
             }
-            let mut log = Log::open(ctx.info.elevated);
+            let mut log = Log::open();
             let saved = log.write_plan(&plan);
             log.line(&format!(
                 "plan level {} build {} elevated {}: {} items selected, {} operations{}",
@@ -541,7 +541,7 @@ fn apply_command(
         return EXIT_ABORTED;
     }
 
-    let mut log = Log::open(ctx.info.elevated);
+    let mut log = Log::open();
     log.line(&format!(
         "apply level {} dry_run {} build {}",
         plan.level, dry_run, plan.build
