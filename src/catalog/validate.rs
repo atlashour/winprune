@@ -1,4 +1,4 @@
-use super::model::{Hive, Item, Level, RegProbe, Risk, Scope, Step};
+use super::model::{Hive, Item, Level, RegProbe, RegType, Risk, Scope, Step};
 use std::collections::HashSet;
 
 /// Roots a `delete` step may point at. Anything outside is a catalog bug, not a policy
@@ -103,7 +103,12 @@ fn check_step(step: &Step) -> Vec<String> {
                 (true, _, _) => {
                     problems.push("registry delete must not carry type or value".into())
                 }
-                (false, Some(_), Some(_)) => {}
+                (false, Some(RegType::Dword), Some(toml::Value::Integer(n)))
+                    if u32::try_from(*n).is_ok() => {}
+                (false, Some(RegType::String), Some(toml::Value::String(_))) => {}
+                (false, Some(_), Some(_)) => problems.push(
+                    "registry value does not fit its type: a dword takes 0 to 4294967295, a string takes quoted text".into(),
+                ),
                 (false, _, _) => {
                     problems.push("registry set needs type and value, or delete = true".into())
                 }
@@ -273,5 +278,31 @@ mod tests {
         );
         let err = Catalog::parse("t", &text).unwrap_err().to_string();
         assert!(err.contains("needs type and value"), "{err}");
+    }
+
+    #[test]
+    fn registry_value_must_fit_its_type() {
+        let step = |kind: &str, value: &str| {
+            item(
+                "",
+                &format!(
+                    "[[item.step]]\nkind = \"registry\"\nhive = \"hklm\"\npath = \"SOFTWARE\\\\X\"\nname = \"Y\"\ntype = \"{kind}\"\nvalue = {value}"
+                ),
+            )
+        };
+        for (kind, value) in [
+            ("dword", "\"1\""),
+            ("dword", "-1"),
+            ("dword", "4294967296"),
+            ("string", "1"),
+        ] {
+            let err = Catalog::parse("t", &step(kind, value))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("does not fit"), "{kind} {value}: {err}");
+        }
+        for (kind, value) in [("dword", "0"), ("dword", "4294967295"), ("string", "\"1\"")] {
+            Catalog::parse("t", &step(kind, value)).unwrap();
+        }
     }
 }
