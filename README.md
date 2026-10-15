@@ -14,9 +14,9 @@ Every item in the catalog has a level. Pick one and uncheck whatever you want to
 
 | level  | meant for | adds |
 |--------|-----------|------|
-| medium | any machine | consumer apps, sponsored apps, telemetry, advertising id, suggestions, typing and speech data, Copilot and Recall policies, a few idle services |
-| high   | machines without Microsoft cloud ties | OneDrive uninstall, Xbox app, Copilot app, new Outlook, Phone Link, Get Help, Sticky Notes, location, compatibility appraiser, fresh telemetry device id |
-| max    | kiosks, signage, appliances | Windows Update, search indexer, Widgets, Xbox identity provider, the OneDrive folder itself |
+| medium | any machine | consumer apps, sponsored apps, telemetry, advertising id, suggestions, typing and speech data, Copilot, Recall and the AI in Settings, Notepad and Paint, a few idle services |
+| high   | machines without Microsoft cloud ties | OneDrive uninstall, Xbox app, Copilot app, new Outlook, Phone Link, Media Player, Get Help, Sticky Notes, Spotlight, location, error reporting, app access to the Windows AI models, compatibility appraiser, fresh telemetry device id |
+| max    | kiosks, signage, appliances | Windows Update, search indexer, Widgets, the Recommended section in Start, Xbox identity and Gaming Services, the OneDrive folder itself |
 
 Items that can cost you something carry a warning, and the plan fills it with what it
 finds on the machine (how many files sit in the OneDrive folder, for instance).
@@ -46,16 +46,19 @@ tooling.
 `diff` reads the machine the same way `plan` does and sorts every item of the level
 into pending (applying would still change something), applied, absent (nothing it
 acts on is here, removed earlier or never shipped), blocked (nothing left to apply,
-but parts Windows keeps or winprune does not remove remain) and not for this build. Without elevation the
-provisioned packages and the Default profile cannot be read; items that depend on
-them, or on anything else that could not be read, show as `applied?` when nothing
-readable is pending, or `unknown`. `diff --json` gives the same for tooling, with
-`status` one of `pending`, `unconfirmed` (shown as `applied?`), `unverified` (shown as
-`unknown`), `applied`, `blocked`, `absent` and `not_applicable`;
-`diff --all` lists what could not be read, and `diff --exit-code` exits with 5 when
-something is pending (items that could not be read do not count). The terminal UI
-shows the same status next to each item and the counts under the list; `p` lists only
-the selected items that are pending.
+but parts Windows keeps or winprune does not remove remain) and not for this build.
+
+Without elevation the provisioned packages and the Default profile cannot be read.
+Items that depend on them, or on anything else that could not be read, show as
+`applied?` when nothing readable is pending, or `unknown` otherwise. `diff --all`
+lists what could not be read, and `diff --exit-code` exits with 5 when something is
+pending; items that could not be read do not count. `diff --json` gives the same for
+tooling, with `status` one of `pending`, `unconfirmed` (shown as `applied?`),
+`unverified` (shown as `unknown`), `applied`, `blocked`, `absent` and
+`not_applicable`.
+
+The terminal UI shows the same status next to each item and the counts under the
+list; `p` lists only the selected items that are pending.
 
 Exit codes: 0 done, 1 bad arguments or setup error, 2 some operations failed, 3
 elevation needed, 4 aborted at a prompt, 5 `diff --exit-code` found pending items.
@@ -82,11 +85,15 @@ loaded are left alone.
 
 ## What it does not do
 
-There is no undo. Removed packages come back only through the Store or a reinstall;
-policies and services can be reverted by hand from the report. Read the plan before
-applying it.
+There is no undo. Removed packages come back only through the Store or a reinstall.
+Policies and services can be put back by hand, but the report only says what was
+changed, not what was there before. `winprune plan` saves a `plan-*.json` next to the
+log where each registry and service operation records what it found (a registry value
+with nothing recorded was not set), so run it right before applying if you may want
+to go back.
 
-It does not touch Edge, Defender, the Store, drivers or anything performance related.
+It does not touch the Edge browser, Defender, the Store app itself, drivers or
+anything performance related.
 
 ## Extending the catalog
 
@@ -117,17 +124,25 @@ kind = "appx"
 patterns = ["*OldVendor*"]
 ```
 
+An item that others list in `requires` cannot be disabled on its own: the overlay
+fails to load until those are disabled too. To check an overlay before using it:
+
+```
+winprune catalog validate --catalog my.toml
+```
+
 Step kinds: `appx`, `service`, `registry`, `task`, `kill`, `run`, `delete`,
-`unsupported`. An item other items list in `requires` cannot be disabled on its own:
-the overlay fails to load until those are disabled too. Registry and delete steps under a user profile take `scope = "user" |
-"all-users" | "default-profile"`; the Default profile is left out for keys under
-`Software\Classes`, whose hive winprune does not mount. A `run` step can list in
-`when_registered` the registry values the software it removes keeps while installed,
-read for the account the command runs as; once none is present, the step counts as
-done and is not run again. An `unsupported` step names something
-winprune leaves in place and reports it while its values are present. See the files
-under `catalog/` for the shape of each.
-`winprune catalog validate --catalog my.toml` checks an overlay.
+`unsupported`. See the files under `catalog/` for the shape of each.
+
+Registry and delete steps under a user profile take `scope = "user" | "all-users" |
+"default-profile"`; the Default profile is left out for keys under
+`Software\Classes`, whose hive winprune does not mount. A registry value is a `dword`
+from 0 to 4294967295 or a quoted `string`; anything else fails validation.
+
+A `run` step can list in `when_registered` the registry values the software it
+removes keeps while installed, read for the account the command runs as. Once none is
+present, the step counts as done and is not run again. An `unsupported` step names
+something winprune leaves in place and reports it while its values are present.
 
 ## Build
 
